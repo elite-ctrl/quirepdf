@@ -1,0 +1,309 @@
+@import "tailwindcss";
+@import "@fontsource/syne/latin-800.css";
+@import "@fontsource/inter/latin-400.css";
+@import "@fontsource/inter/latin-700.css";
+
+@theme {
+  --font-sans: "Inter", "Segoe UI", sans-serif;
+  --font-display: "Syne", "Inter", sans-serif;
+  --color-desk: #fffdf5;
+  --color-raised: #ffffff;
+  --color-paper: #ffffff;
+  --color-paper-2: #fffdf5;
+  --color-ink: #000000;
+  --color-ink-soft: #1a1a1a;
+  --color-muted: #3a3a3a;
+  --color-line: #000000;
+  --color-line-dark: #000000;
+  --color-brass: #8d5a2b;
+  --color-steel: #1e4d6b;
+  --color-crimson: #8c2f2f;
+  --color-stamp: #ffd23f;
+  --color-pink: #ff6b6b;
+  --color-sky: #74b9ff;
+  --color-mint: #88d498;
+  --radius-md: 0px;
+}
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  body {
+    margin: 0;
+    overflow: hidden;
+    background: var(--color-desk);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-weight: 400;
+    line-height: 1.5;
+  }
+  h1 {
+    font-family: var(--font-sans);
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+  h2 {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+    text-wrap: balance;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled),
+  .quire-file {
+    cursor: pointer;
+  }
+  .quire-app :focus-visible {
+    outline: 3px solid var(--color-sky);
+    outline-offset: 3px;
+  }
+}
+
+.quire-word {
+  border: 3px solid #000;
+  background: var(--color-stamp);
+  color: #000;
+  padding: 0.15rem 0.45rem;
+  box-shadow: 3px 3px 0 0 #000;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+}
+
+.quire-kicker {
+  display: inline-block;
+  border: 3px solid #000;
+  background: var(--color-pink);
+  color: #000;
+  padding: 0.15rem 0.45rem;
+  box-shadow: 3px 3px 0 0 #000;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.quire-card {
+  border: 3px solid #000;
+  background: #fff;
+  padding: 1.5rem;
+  box-shadow: 8px 8px 0 0 #000;
+}
+
+.quire-app > header,
+.quire-app > footer,
+.quire-app aside {
+  background: #fff;
+}
+
+.quire-app > header {
+  border-bottom: 4px solid #000;
+}
+
+.quire-app > footer {
+  border-top: 4px solid #000;
+}
+
+.quire-app aside {
+  border-left-width: 4px;
+}
+
+.quire-app button,
+.quire-app .quire-file,
+.quire-app select,
+.quire-app input:not([type="file"]),
+.quire-app textarea {
+  border: 3px solid #000;
+  border-radius: 0;
+  background: #fff;
+  color: #000;
+  box-shadow: 5px 5px 0 0 #000;
+  font-weight: 700;
+}
+
+.quire-app input:not([type="file"]),
+.quire-app textarea {
+  font-weight: 400;
+}
+
+.quire-app button,
+.quire-app .quire-file {
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+
+.quire-app button:hover:not(:disabled),
+.quire-app .quire-file:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 7px 7px 0 0 #000;
+}
+
+.quire-app button:active:not(:disabled),
+.quire-app .quire-file:active {
+  transform: translate(3px, 3px);
+  box-shadow: none;
+  transition: none;
+}
+
+.quire-app .bg-brass,
+.quire-app .bg-stamp {
+  background: var(--color-stamp);
+  color: #000;
+}
+
+.quire-app .bg-pink {
+  background: var(--color-pink);
+  color: #000;
+}
+
+.quire-app .bg-steel {
+  background: var(--color-steel);
+  color: var(--color-paper);
+}
+
+.quire-app .text-paper {
+  color: var(--color-ink);
+}
+
+.quire-app .bg-steel.text-paper {
+  color: var(--color-paper);
+}
+
+.quire-app button.border-brass {
+  background: var(--color-stamp);
+}
+
+.quire-app .fixed .max-w-sm {
+  border: 3px solid #000;
+  box-shadow: 12px 12px 0 0 #000;
+}
+
+.quire-app [role="alert"] {
+  display: inline-block;
+  border: 3px solid #000;
+  background: var(--color-pink);
+  color: #000;
+  padding: 0.45rem 0.7rem;
+  box-shadow: 3px 3px 0 0 #000;
+  font-weight: 700;
+}
+
+.quire-dropping {
+  outline: 3px solid var(--color-sky);
+  outline-offset: -6px;
+}
+
+.quire-page {
+  border: 3px solid #000;
+  box-shadow: 8px 8px 0 0 #000;
+}
+
+.quire-text {
+  color-scheme: only light;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: clip;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.quire-text :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.quire-text > :not(.markedContent),
+.quire-text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.quire-text .markedContent {
+  display: contents;
+}
+
+.quire-text ::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--color-brass) 45%, transparent);
+}
+
+.quire-marks {
+  z-index: 1;
+  pointer-events: none;
+}
+
+.quire-selecting .quire-text {
+  pointer-events: none;
+}
+
+.quire-selecting .quire-marks {
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.quire-selecting .quire-mark {
+  cursor: pointer;
+}
+
+.quire-drawing,
+.quire-drawing .quire-marks {
+  cursor: crosshair;
+}
+
+.quire-drawing .quire-text {
+  pointer-events: none;
+  user-select: none;
+}
+
+.quire-drawing .quire-marks {
+  z-index: 3;
+  pointer-events: auto;
+}
+
+.quire-callout {
+  z-index: 4;
+  border: 2px solid #000;
+  pointer-events: none;
+  background: #fff;
+}
+
+.quire-selecting .quire-callout,
+.quire-callout.is-selected {
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.quire-selecting [data-handle] {
+  cursor: grab;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quire-app {
+    scroll-behavior: auto;
+  }
+  .quire-app button,
+  .quire-app .quire-file,
+  .quire-app button:hover:not(:disabled),
+  .quire-app .quire-file:hover,
+  .quire-app button:active:not(:disabled),
+  .quire-app .quire-file:active {
+    transform: none;
+    transition: none;
+  }
+}

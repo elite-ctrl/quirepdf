@@ -1,0 +1,1465 @@
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import {
+  ArrowUpRight,
+  BookOpen,
+  Columns2,
+  FileDown,
+  FileText,
+  Files,
+  GitCompare,
+  Highlighter,
+  MessageSquare,
+  Minus,
+  MousePointer2,
+  PanelRight,
+  Plus,
+  Redo2,
+  Search,
+  Strikethrough,
+  Underline,
+  Undo2,
+  Upload,
+} from "lucide-react";
+import { PdfPage, type ShapePlace } from "@/components/desk/PdfPage";
+import { Rail } from "@/components/desk/Rail";
+import { selectionOnPage, type ViewportLike } from "@/lib/geometry";
+import { downloadBlob, marksToMarkdown, safeStem } from "@/lib/markdown";
+import {
+  INKS,
+  LABELS,
+  type InkId,
+  type Kind,
+  type LabelId,
+  type Mark,
+  type Pass,
+  type Tool,
+} from "@/lib/marks";
+import { compareDocuments } from "@/lib/compare-pdf";
+import { comparisonResultsPdf, markedPagesPdf } from "@/lib/embed-marks";
+import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@/lib/pdf-client";
+import { buildSamplePdf } from "@/lib/sample-pdf";
+import { fingerprint, loadSession, saveSession } from "@/lib/session";
+
+const TOOLS: { id: Tool; name: string; hint: string; icon: typeof MousePointer2 }[] = [
+  { id: "select", name: "Select", hint: "Select marks (V)", icon: MousePointer2 },
+  { id: "highlight", name: "Highlight", hint: "Highlight (H)", icon: Highlighter },
+  { id: "underline", name: "Underline", hint: "Underline (U)", icon: Underline },
+  { id: "strikeout", name: "Strike", hint: "Strikeout (S)", icon: Strikethrough },
+  { id: "callout", name: "Callout", hint: "Callout (C). Press the point, then drag the box.", icon: MessageSquare },
+  { id: "arrow", name: "Arrow", hint: "Arrow (A). Drag. The head is where you let go.", icon: ArrowUpRight },
+];
+
+type ViewMode = "single" | "facing" | "halves";
+
+type MateDoc = {
+  pdf: PdfDoc;
+  name: string;
+  numPages: number;
+  baseWidth: number;
+};
+
+function pageSides(count: number, mode: Exclude<ViewMode, "single">) {
+  const left: number[] = [];
+  const right: number[] = [];
+  if (mode === "facing") {
+    for (let number = 1; number <= count; number += 1) {
+      if (number % 2 === 1) left.push(number);
+      else right.push(number);
+    }
+  } else {
+    const mid = Math.ceil(count / 2);
+    for (let number = 1; number <= count; number += 1) {
+      if (number <= mid) left.push(number);
+      else right.push(number);
+    }
+  }
+  return { left, right };
+}
+
+function nearestPage(el: HTMLElement) {
+  const rootTop = el.getBoundingClientRect().top + 32;
+  let best = 0;
+  let bestDist = Infinity;
+  el.querySelectorAll<HTMLElement>("[data-page]").forEach((node) => {
+    const dist = Math.abs(node.getBoundingClientRect().top - rootTop);
+    const number = Number(node.dataset.page);
+    if (dist < bestDist && Number.isFinite(number)) {
+      bestDist = dist;
+      best = number;
+    }
+  });
+  return best;
+}
+
+export function Desk() {
+  const [pdf, setPdf] = useState<PdfDoc | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [numPages, setNumPages] = useState(0);
+  const [baseWidth, setBaseWidth] = useState(595);
+  const [scale, setScale] = useState(1);
+  const [zoomMode, setZoomMode] = useState<"fit" | "manual">("fit");
+  const [viewMode, setViewMode] = useState<ViewMode>("single");
+  const [mate, setMate] = useState<MateDoc | null>(null);
+  const [mateScale, setMateScale] = useState(1);
+  const [linked, setLinked] = useState(true);
+  const [mateBusy, setMateBusy] = useState(false);
+  const [matePage, setMatePage] = useState(1);
+  const [tool, setTool] = useState<Tool>("select");
+  const [pass, setPass] = useState<Pass>(1);
+  const [ink, setInk] = useState<InkId>("brass");
+  const [label, setLabel] = useState<LabelId>("query");
+  const [marks, setMarks] = useState<Mark[]>([]);
+  const [imported, setImported] = useState<string[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [railOpen, setRailOpen] = useState(true);
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [hitIndex, setHitIndex] = useState(0);
+  const [searching, setSearching] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "changes" | null>(null);
+  const [comparing, setComparing] = useState(false);
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
+  const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const [pending, setPending] = useState<File | "sample" | null>(null);
+  const [dragOver, setDragOver] = useState(false);
+  const [historyTick, setHistoryTick] = useState(0);
+  const [staySelection, setStaySelection] = useState(false);
+
+  const singleScrollRef = useRef<HTMLDivElement>(null);
+  const leftScrollRef = useRef<HTMLDivElement>(null);
+  const rightScrollRef = useRef<HTMLDivElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const mateFileRef = useRef<HTMLInputElement>(null);
+  const findRef = useRef<HTMLInputElement>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const viewports = useRef(new Map<number, ViewportLike>());
+  const marksRef = useRef(marks);
+  const importedRef = useRef(imported);
+  const bytesRef = useRef<Uint8Array | null>(null);
+  const pdfRef = useRef<PdfDoc | null>(null);
+  const draftRef = useRef({ tool, pass, ink, label });
+  const undoRef = useRef<Mark[][]>([]);
+  const redoRef = useRef<Mark[][]>([]);
+  const noteDirty = useRef(false);
+  const noteSnapshot = useRef<Mark[] | null>(null);
+  const activeIdRef = useRef<string | null>(null);
+  const mateDocRef = useRef<MateDoc | null>(null);
+  const mateTicket = useRef(0);
+  const openTicket = useRef(0);
+  const gestureBase = useRef<Mark[] | null>(null);
+  const scaleRef = useRef(scale);
+  const earlierNameRef = useRef<string | null>(null);
+  const stayRef = useRef(false);
+  const applyRef = useRef<(kind: "highlight" | "underline" | "strikeout") => boolean>(() => false);
+
+  marksRef.current = marks;
+  importedRef.current = imported;
+  pdfRef.current = pdf;
+  draftRef.current = { tool, pass, ink, label };
+  activeIdRef.current = activeId;
+  mateDocRef.current = mate;
+  scaleRef.current = scale;
+  stayRef.current = staySelection;
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("quire-stay-selection") === "1";
+      stayRef.current = stored;
+      setStaySelection(stored);
+    } catch {
+      /* private browsing */
+    }
+  }, []);
+
+  useEffect(() => {
+    document.title = fileName ? `${fileName} — Quire` : "Quire";
+  }, [fileName]);
+
+  useEffect(() => {
+    if (window.innerWidth < 768) setRailOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (zoomMode !== "fit" || !pdf) return;
+    const split = !!mate || viewMode !== "single";
+    const el = split ? leftScrollRef.current : singleScrollRef.current;
+    const right = mate ? rightScrollRef.current : null;
+    if (!el) return;
+    const apply = () => {
+      const gutter = split ? 24 : el.clientWidth < 640 ? 32 : 80;
+      const next = Math.min(1.75, Math.max(0.4, (el.clientWidth - gutter) / baseWidth));
+      setScale(next);
+      if (right && mate) {
+        const fitted = Math.min(1.75, Math.max(0.4, (right.clientWidth - gutter) / mate.baseWidth));
+        setMateScale(fitted);
+      }
+    };
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(el);
+    if (right) observer.observe(right);
+    return () => observer.disconnect();
+  }, [zoomMode, pdf, baseWidth, viewMode, mate]);
+
+  useEffect(() => {
+    if (!sessionKey || !fileName) return;
+    const handle = window.setTimeout(() => {
+      void saveSession(sessionKey, {
+        name: fileName,
+        marks,
+        importedSourceIds: imported,
+        savedAt: Date.now(),
+      });
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [sessionKey, fileName, marks, imported]);
+
+  useEffect(() => {
+    if (!pdf) return;
+    const q = query.trim();
+    if (q.length < 2) {
+      setHits([]);
+      setHitIndex(0);
+      setSearching(false);
+      return;
+    }
+    let cancel = false;
+    setSearching(true);
+    const handle = window.setTimeout(() => {
+      void searchPdf(pdf, q)
+        .then((found) => {
+          if (cancel) return;
+          setHits(found);
+          setHitIndex(0);
+        })
+        .catch(() => {
+          if (!cancel) setHits([]);
+        })
+        .finally(() => {
+          if (!cancel) setSearching(false);
+        });
+    }, 220);
+    return () => {
+      cancel = true;
+      window.clearTimeout(handle);
+    };
+  }, [pdf, query]);
+
+  useEffect(() => {
+    const hit = hits[hitIndex];
+    if (!hit) return;
+    document.getElementById(`quire-page-a-${hit.page}`)?.scrollIntoView({ block: "center", inline: "nearest" });
+  }, [hits, hitIndex]);
+
+  useEffect(() => {
+    if (!activeId || !railOpen) return;
+    const handle = window.requestAnimationFrame(() => noteRef.current?.focus());
+    return () => window.cancelAnimationFrame(handle);
+  }, [activeId, railOpen]);
+
+  useEffect(() => {
+    if (!pdf) return;
+    const split = !!mate || viewMode !== "single";
+    const panes = split
+      ? [
+          { el: leftScrollRef.current, set: setPage },
+          { el: rightScrollRef.current, set: setMatePage },
+        ]
+      : [{ el: singleScrollRef.current, set: setPage }];
+    const stops: Array<() => void> = [];
+    for (const pane of panes) {
+      const el = pane.el;
+      if (!el) continue;
+      let frame = 0;
+      const onScroll = () => {
+        window.cancelAnimationFrame(frame);
+        frame = window.requestAnimationFrame(() => {
+          const best = nearestPage(el);
+          if (best) pane.set((current) => (current === best ? current : best));
+        });
+      };
+      el.addEventListener("scroll", onScroll, { passive: true });
+      onScroll();
+      stops.push(() => {
+        window.cancelAnimationFrame(frame);
+        el.removeEventListener("scroll", onScroll);
+      });
+    }
+    return () => {
+      for (const stop of stops) stop();
+    };
+  }, [pdf, numPages, scale, viewMode, mate, mateScale]);
+
+  useEffect(() => {
+    const split = !!mate || viewMode !== "single";
+    const lockScroll = viewMode !== "single" || (!!mate && linked);
+    if (!split || !lockScroll || !pdf) return;
+    const left = leftScrollRef.current;
+    const right = rightScrollRef.current;
+    if (!left || !right) return;
+    let lock = false;
+    const apply = (source: HTMLElement, target: HTMLElement) => {
+      if (lock) return;
+      const sourceMax = source.scrollHeight - source.clientHeight;
+      const targetMax = target.scrollHeight - target.clientHeight;
+      const next = sourceMax <= 0 || targetMax <= 0 ? 0 : (source.scrollTop / sourceMax) * targetMax;
+      if (Math.abs(target.scrollTop - next) < 1) return;
+      lock = true;
+      target.scrollTop = next;
+      window.requestAnimationFrame(() => {
+        lock = false;
+      });
+    };
+    const onLeft = () => apply(left, right);
+    const onRight = () => apply(right, left);
+    left.addEventListener("scroll", onLeft, { passive: true });
+    right.addEventListener("scroll", onRight, { passive: true });
+    const observer = new ResizeObserver(() => apply(left, right));
+    if (left.firstElementChild) observer.observe(left.firstElementChild);
+    if (right.firstElementChild) observer.observe(right.firstElementChild);
+    apply(left, right);
+    return () => {
+      observer.disconnect();
+      left.removeEventListener("scroll", onLeft);
+      right.removeEventListener("scroll", onRight);
+    };
+  }, [viewMode, pdf, numPages, scale, mate, mateScale, linked]);
+
+  function bumpHistory() {
+    setHistoryTick((tick) => tick + 1);
+  }
+
+  function commitNoteHistory() {
+    if (!noteDirty.current || !noteSnapshot.current) {
+      noteDirty.current = false;
+      return;
+    }
+    undoRef.current.push(noteSnapshot.current);
+    if (undoRef.current.length > 60) undoRef.current.shift();
+    redoRef.current = [];
+    noteDirty.current = false;
+    noteSnapshot.current = null;
+    bumpHistory();
+  }
+
+  function commit(next: Mark[], record: boolean) {
+    if (record) {
+      undoRef.current.push(marksRef.current);
+      if (undoRef.current.length > 60) undoRef.current.shift();
+      redoRef.current = [];
+    }
+    marksRef.current = next;
+    setMarks(next);
+    bumpHistory();
+  }
+
+  function undo() {
+    commitNoteHistory();
+    const previous = undoRef.current.pop();
+    if (!previous) return;
+    redoRef.current.push(marksRef.current);
+    marksRef.current = previous;
+    setMarks(previous);
+    bumpHistory();
+  }
+
+  function redo() {
+    commitNoteHistory();
+    const next = redoRef.current.pop();
+    if (!next) return;
+    undoRef.current.push(marksRef.current);
+    marksRef.current = next;
+    setMarks(next);
+    bumpHistory();
+  }
+
+  function patchMark(id: string, patch: Partial<Mark>) {
+    commitNoteHistory();
+    commit(
+      marksRef.current.map((mark) => (mark.id === id ? { ...mark, ...patch } : mark)),
+      true,
+    );
+  }
+
+  function onNote(id: string, value: string) {
+    if (!noteDirty.current) {
+      noteDirty.current = true;
+      noteSnapshot.current = marksRef.current;
+    }
+    commit(
+      marksRef.current.map((mark) => (mark.id === id ? { ...mark, note: value } : mark)),
+      false,
+    );
+  }
+
+  function removeMark(id: string) {
+    commitNoteHistory();
+    commit(
+      marksRef.current.filter((mark) => mark.id !== id),
+      true,
+    );
+    setActiveId((current) => (current === id ? null : current));
+  }
+
+  function clearMarks() {
+    commitNoteHistory();
+    commit([], true);
+    setActiveId(null);
+  }
+
+  function pickMark(id: string, scroll: boolean) {
+    commitNoteHistory();
+    setActiveId(id);
+    setRailOpen(true);
+    if (!scroll) return;
+    const mark = marksRef.current.find((item) => item.id === id);
+    if (mark) document.getElementById(`quire-page-a-${mark.page}`)?.scrollIntoView({ block: "center", inline: "nearest" });
+  }
+
+  function applyLiveSelection(kind: "highlight" | "underline" | "strikeout") {
+    const draft = draftRef.current;
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return false;
+    const node = selection.anchorNode;
+    const element = node instanceof Element ? node : node?.parentElement;
+    const pageEl = element?.closest<HTMLElement>("[data-page]");
+    if (!pageEl || pageEl.dataset.pane === "mate") return false;
+    const pageNumber = Number(pageEl.dataset.page);
+    const viewport = viewports.current.get(pageNumber);
+    if (!viewport || !pdfRef.current) return false;
+    const picked = selectionOnPage(pageEl, viewport);
+    if (!picked) return false;
+    if (!stayRef.current) selection.removeAllRanges();
+    commitNoteHistory();
+    const mark: Mark = {
+      id: crypto.randomUUID(),
+      page: pageNumber,
+      kind,
+      pass: draft.pass,
+      ink: draft.ink,
+      label: draft.label,
+      note: "",
+      quote: picked.quote,
+      quads: picked.quads,
+      createdAt: Date.now(),
+    };
+    commit([...marksRef.current, mark], true);
+    setActiveId(mark.id);
+    setRailOpen(true);
+    return true;
+  }
+
+  applyRef.current = applyLiveSelection;
+
+  function chooseTool(next: Tool) {
+    const previous = draftRef.current.tool;
+    setTool(next);
+    if (!stayRef.current) return;
+    if (next !== "highlight" && next !== "underline" && next !== "strikeout") return;
+    if (next === previous) return;
+    applyLiveSelection(next);
+  }
+
+  function toggleStay() {
+    setStaySelection((value) => {
+      const next = !value;
+      stayRef.current = next;
+      try {
+        localStorage.setItem("quire-stay-selection", next ? "1" : "0");
+      } catch {
+        /* private browsing */
+      }
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    let last = 0;
+    function createFromSelection() {
+      const draft = draftRef.current;
+      if (draft.tool !== "highlight" && draft.tool !== "underline" && draft.tool !== "strikeout") return;
+      applyRef.current(draft.tool);
+    }
+    function onPointerUp(event: Event) {
+      const target = event.target;
+      const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+      if (!element?.closest("[data-page]")) return;
+      const now = Date.now();
+      if (now - last < 80) return;
+      last = now;
+      window.setTimeout(createFromSelection, 0);
+    }
+    document.addEventListener("mouseup", onPointerUp);
+    document.addEventListener("touchend", onPointerUp);
+    return () => {
+      document.removeEventListener("mouseup", onPointerUp);
+      document.removeEventListener("touchend", onPointerUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        findRef.current?.focus();
+        findRef.current?.select();
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "z") {
+        if (typing) return;
+        event.preventDefault();
+        if (event.shiftKey) redo();
+        else undo();
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "y") {
+        if (typing) return;
+        event.preventDefault();
+        redo();
+        return;
+      }
+      if (typing) return;
+      const key = event.key.toLowerCase();
+      if (key === "h") chooseTool("highlight");
+      else if (key === "u") chooseTool("underline");
+      else if (key === "s") chooseTool("strikeout");
+      else if (key === "c") chooseTool("callout");
+      else if (key === "a") chooseTool("arrow");
+      else if (key === "v") chooseTool("select");
+      else if ((key === "delete" || key === "backspace") && activeIdRef.current) {
+        event.preventDefault();
+        removeMark(activeIdRef.current);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  function choosePass(next: Pass) {
+    setPass(next);
+    setInk(next === 1 ? "brass" : "steel");
+  }
+
+  function gestureStart() {
+    commitNoteHistory();
+    gestureBase.current = marksRef.current;
+  }
+
+  function gestureMove(id: string, patch: Partial<Mark>) {
+    const next = marksRef.current.map((mark) => (mark.id === id ? { ...mark, ...patch } : mark));
+    marksRef.current = next;
+    setMarks(next);
+  }
+
+  function gestureEnd(moved: boolean) {
+    const base = gestureBase.current;
+    gestureBase.current = null;
+    if (!base || !moved) return;
+    undoRef.current.push(base);
+    if (undoRef.current.length > 60) undoRef.current.shift();
+    redoRef.current = [];
+    bumpHistory();
+  }
+
+  function placeShape(pageNumber: number, place: ShapePlace) {
+    const draft = draftRef.current;
+    commitNoteHistory();
+    const mark: Mark = {
+      id: crypto.randomUUID(),
+      page: pageNumber,
+      kind: place.kind,
+      pass: draft.pass,
+      ink: draft.ink,
+      label: draft.label,
+      note: "",
+      quote: "",
+      quads: place.kind === "callout" ? [place.quad] : [],
+      from: place.kind === "arrow" ? place.from : undefined,
+      to: place.kind === "arrow" ? place.to : place.tip,
+      createdAt: Date.now(),
+    };
+    commit([...marksRef.current, mark], true);
+    setActiveId(mark.id);
+    setRailOpen(true);
+  }
+
+  function nudgeZoom(direction: number) {
+    setZoomMode("manual");
+    const factor = direction > 0 ? 1.1 : 1 / 1.1;
+    const clamp = (current: number) => Math.min(2.5, Math.max(0.5, Math.round(current * factor * 100) / 100));
+    setScale((current) => clamp(current));
+    setMateScale((current) => clamp(current));
+  }
+
+  function jumpTo(side: "a" | "b", raw: string) {
+    const count = side === "a" ? numPages : (mate?.numPages ?? 0);
+    const number = Number(raw);
+    if (!Number.isFinite(number) || !count) return;
+    const next = Math.min(count, Math.max(1, Math.round(number)));
+    if (side === "a") setPage(next);
+    else setMatePage(next);
+    document.getElementById(`quire-page-${side}-${next}`)?.scrollIntoView({ block: "start", inline: "nearest" });
+  }
+
+  function stepHit(direction: number) {
+    if (!hits.length) return;
+    setHitIndex((current) => (current + direction + hits.length) % hits.length);
+  }
+
+  async function loadBytes(name: string, bytes: Uint8Array) {
+    const ticket = ++openTicket.current;
+    setBusy(true);
+    setError("");
+    setStatus("Opening…");
+    setPending(null);
+    try {
+      const [nextPdf, key] = await Promise.all([openPdf(bytes), fingerprint(bytes)]);
+      if (ticket !== openTicket.current) {
+        void nextPdf.cleanup();
+        return;
+      }
+      const [first, session] = await Promise.all([nextPdf.getPage(1), loadSession(key)]);
+      if (ticket !== openTicket.current) {
+        void nextPdf.cleanup();
+        return;
+      }
+      const previous = pdfRef.current;
+      const width = first.getViewport({ scale: 1 }).width;
+      bytesRef.current = bytes;
+      pdfRef.current = nextPdf;
+      dropMate();
+      setPdf(nextPdf);
+      setFileName(name);
+      setBaseWidth(width);
+      setNumPages(nextPdf.numPages);
+      setPage(1);
+      setQuery("");
+      setHits([]);
+      setZoomMode("fit");
+      undoRef.current = [];
+      redoRef.current = [];
+      noteDirty.current = false;
+      noteSnapshot.current = null;
+      viewports.current.clear();
+      setActiveId(null);
+      setSessionKey(key);
+      if (previous && previous !== nextPdf) void previous.cleanup();
+      if (session) {
+        marksRef.current = session.marks;
+        setMarks(session.marks);
+        setImported(session.importedSourceIds);
+        setStatus(
+          session.marks.length
+            ? `Restored ${session.marks.length} mark${session.marks.length === 1 ? "" : "s"} kept on this machine.`
+            : "Opened. Select text to mark it.",
+        );
+        bumpHistory();
+        return;
+      }
+      marksRef.current = [];
+      setMarks([]);
+      setImported([]);
+      bumpHistory();
+      setStatus("Reading marks already in the file…");
+      const parsed = await readExisting(nextPdf);
+      if (ticket !== openTicket.current || pdfRef.current !== nextPdf) return;
+      marksRef.current = parsed.marks;
+      setMarks(parsed.marks);
+      setImported(parsed.ids);
+      setStatus(
+        parsed.marks.length
+          ? `Opened with ${parsed.marks.length} mark${parsed.marks.length === 1 ? "" : "s"} already in the file.`
+          : "Opened. Select text to mark it.",
+      );
+      bumpHistory();
+    } catch (err) {
+      if (ticket !== openTicket.current) return;
+      setError(messageFrom(err));
+      setStatus("");
+    } finally {
+      if (ticket === openTicket.current) setBusy(false);
+    }
+  }
+
+  function requestOpen(next: File | "sample") {
+    if (next !== "sample" && !isPdf(next)) {
+      setError("Choose a PDF.");
+      return;
+    }
+    if (marksRef.current.length > 0) {
+      setPending(next);
+      return;
+    }
+    void beginOpen(next);
+  }
+
+  async function beginOpen(next: File | "sample") {
+    if (next === "sample") {
+      setStatus("Preparing the sample…");
+      const bytes = await buildSamplePdf();
+      await loadBytes("Quorum interim results.pdf", bytes);
+      return;
+    }
+    const bytes = new Uint8Array(await next.arrayBuffer());
+    await loadBytes(next.name, bytes);
+  }
+
+  async function exportPdf() {
+    const bytes = bytesRef.current;
+    if (!bytes || !fileName) return;
+    setExporting("pdf");
+    setError("");
+    try {
+      commitNoteHistory();
+      const marked = marksRef.current;
+      const pages = new Set(marked.map((mark) => mark.page)).size;
+      if (!pages) {
+        setStatus("No marked pages yet.");
+        return;
+      }
+      const output = await markedPagesPdf(bytes, marked, importedRef.current);
+      if (!output) {
+        setStatus("No marked pages yet.");
+        return;
+      }
+      downloadBlob(new Blob([output.slice(0)], { type: "application/pdf" }), `${safeStem(fileName)}-marked.pdf`);
+      setStatus(
+        pages === 1
+          ? "Downloaded 1 marked page. Open it in Acrobat, Preview, or back here."
+          : `Downloaded ${pages} marked pages. Open them in Acrobat, Preview, or back here.`,
+      );
+    } catch {
+      setError("The comment sheet is still available. This PDF could not be rewritten.");
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  function dropMate() {
+    mateTicket.current += 1;
+    setMateBusy(false);
+    const current = mateDocRef.current;
+    if (!current) return;
+    mateDocRef.current = null;
+    setMate(null);
+    void current.pdf.cleanup();
+  }
+
+  function closeMate() {
+    dropMate();
+    setStatus("Compare closed. Marks are still on this file.");
+  }
+
+  async function loadMate(file: File) {
+    if (!isPdf(file)) {
+      setError("Choose a PDF.");
+      return;
+    }
+    const ticket = ++mateTicket.current;
+    setMateBusy(true);
+    setError("");
+    setStatus("Opening the second PDF…");
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const next = await openPdf(bytes);
+      if (ticket !== mateTicket.current || !pdfRef.current) {
+        void next.cleanup();
+        return;
+      }
+      const first = await next.getPage(1);
+      const width = first.getViewport({ scale: 1 }).width;
+      const previous = mateDocRef.current;
+      const opened: MateDoc = { pdf: next, name: file.name, numPages: next.numPages, baseWidth: width };
+      mateDocRef.current = opened;
+      setMate(opened);
+      setMateScale(scaleRef.current);
+      setLinked(true);
+      setMatePage(1);
+      if (previous) void previous.pdf.cleanup();
+      setStatus("Compare is open. Scrolling one side moves the other. Marks stay on this file.");
+    } catch (err) {
+      if (ticket === mateTicket.current) setError(messageFrom(err));
+    } finally {
+      if (ticket === mateTicket.current) setMateBusy(false);
+    }
+  }
+
+  async function findChanges() {
+    const later = pdfRef.current;
+    const earlier = mateDocRef.current?.pdf;
+    if (!later || !earlier || comparing) return;
+    setComparing(true);
+    setError("");
+    setStatus("Comparing. This file is the later copy.");
+    try {
+      const found = await compareDocuments(earlier, later, draftRef.current.pass);
+      earlierNameRef.current = mateDocRef.current?.name ?? earlierNameRef.current;
+      const kept = marksRef.current.filter((mark) => !mark.id.startsWith("change-"));
+      commitNoteHistory();
+      commit([...kept, ...found.marks], true);
+      if (found.marks[0]) {
+        setActiveId(found.marks[0].id);
+        setRailOpen(true);
+      }
+      if (!found.marks.length) setStatus("No text changes.");
+      else if (found.capped) {
+        setStatus("Marked 400 changes, then stopped. Undo if these are not two versions of one text.");
+      } else {
+        const count = found.marks.length;
+        setStatus(
+          count === 1
+            ? "Marked 1 change. Changes PDF downloads the list and the changed page."
+            : `Marked ${count} changes. Changes PDF downloads the list and the changed pages.`,
+        );
+      }
+    } catch {
+      setError("The two files could not be compared.");
+    } finally {
+      setComparing(false);
+    }
+  }
+
+  async function exportChanges() {
+    const bytes = bytesRef.current;
+    if (!bytes || !fileName) return;
+    const changes = marksRef.current.filter((mark) => mark.id.startsWith("change-"));
+    if (!changes.length) {
+      setStatus("No comparison results yet. Open Compare, then Changes.");
+      return;
+    }
+    setExporting("changes");
+    setError("");
+    try {
+      commitNoteHistory();
+      const output = await comparisonResultsPdf(bytes, changes, fileName, earlierNameRef.current);
+      if (!output) {
+        setStatus("No comparison results yet. Open Compare, then Changes.");
+        return;
+      }
+      downloadBlob(new Blob([output.slice(0)], { type: "application/pdf" }), `${safeStem(fileName)}-changes.pdf`);
+      const pages = new Set(changes.map((mark) => mark.page)).size;
+      setStatus(
+        pages === 1
+          ? "Downloaded the comparison: a list, then 1 changed page."
+          : `Downloaded the comparison: a list, then ${pages} changed pages.`,
+      );
+    } catch {
+      setError("The comparison PDF could not be written.");
+    } finally {
+      setExporting(null);
+    }
+  }
+
+  function exportSheet() {
+    if (!fileName) return;
+    commitNoteHistory();
+    const markdown = marksToMarkdown(fileName, marksRef.current);
+    downloadBlob(new Blob([markdown], { type: "text/markdown;charset=utf-8" }), `${safeStem(fileName)}-notes.md`);
+    setStatus("Comment sheet downloaded.");
+  }
+
+  const canUndo = undoRef.current.length > 0 || noteDirty.current;
+  const canRedo = redoRef.current.length > 0;
+  void historyTick;
+  const pair = !!pdf && !!mate;
+  const bilingual = !!pdf && !mate && viewMode !== "single";
+  const sides = bilingual ? pageSides(numPages, viewMode === "halves" ? "halves" : "facing") : null;
+  const splitChrome = pair || viewMode !== "single";
+
+  function renderPages(doc: PdfDoc, numbers: number[], side: "work" | "mate", pageScale: number) {
+    const prefix = side === "work" ? "a" : "b";
+    return numbers.map((pageNumber, index) => (
+      <PdfPage
+        key={`${side}-${pageNumber}`}
+        pdf={doc}
+        pageNumber={pageNumber}
+        scale={pageScale}
+        marks={side === "work" ? marks : []}
+        hits={side === "work" ? hits : []}
+        activeHit={side === "work" ? hitIndex : -1}
+        activeId={side === "work" ? activeId : null}
+        tool={side === "work" ? tool : "highlight"}
+        eager={index === 0}
+        pane={side}
+        domId={`quire-page-${prefix}-${pageNumber}`}
+        onPick={(id) => pickMark(id, false)}
+        onPlace={side === "work" ? placeShape : undefined}
+        onGestureStart={side === "work" ? gestureStart : undefined}
+        onGestureMove={side === "work" ? gestureMove : undefined}
+        onGestureEnd={side === "work" ? gestureEnd : undefined}
+        onViewport={
+          side === "work"
+            ? (number, viewport) => {
+                viewports.current.set(number, viewport);
+              }
+            : () => {}
+        }
+      />
+    ));
+  }
+
+  const workNumbers = Array.from({ length: numPages }, (_, index) => index + 1);
+
+  return (
+    <div
+      className="quire-app flex h-dvh flex-col overflow-hidden bg-desk text-paper"
+      onDragOver={(event) => {
+        event.preventDefault();
+        setDragOver(true);
+      }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={(event) => {
+        event.preventDefault();
+        setDragOver(false);
+        const file = event.dataTransfer.files?.[0];
+        if (file) requestOpen(file);
+      }}
+    >
+      <header className="shrink-0 border-b border-line-dark">
+        <div className="flex h-14 items-center gap-2 px-3">
+          <p className="quire-word font-display text-2xl leading-none tracking-tight">Quire</p>
+          {fileName && (
+            <p className="hidden min-w-0 flex-1 truncate text-sm text-muted sm:block">{fileName}</p>
+          )}
+          {!fileName && <span className="min-w-0 flex-1" />}
+          <label
+            htmlFor="quire-open"
+            className="quire-file inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-brass px-3 text-sm text-paper"
+          >
+            <Upload size={16} strokeWidth={1.75} />
+            <span className="hidden sm:inline">Open PDF</span>
+            <span className="sm:hidden">Open</span>
+          </label>
+          {pdf && (
+            <>
+              <button
+                type="button"
+                onClick={() => void exportPdf()}
+                disabled={!marks.length || exporting !== null}
+                aria-label="Download marked PDF"
+                title="Download the pages that have marks"
+                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+              >
+                <FileDown size={16} strokeWidth={1.75} />
+                <span className="hidden md:inline">{exporting === "pdf" ? "Saving…" : "Marked PDF"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportChanges()}
+                disabled={!marks.some((mark) => mark.id.startsWith("change-")) || exporting !== null}
+                aria-label="Download comparison PDF"
+                title="Download the comparison list, then the changed pages"
+                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+              >
+                <GitCompare size={16} strokeWidth={1.75} />
+                <span className="hidden md:inline">{exporting === "changes" ? "Saving…" : "Changes PDF"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={exportSheet}
+                disabled={!marks.length || exporting !== null}
+                aria-label="Download comment sheet"
+                title="Download comment sheet"
+                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+              >
+                <FileText size={16} strokeWidth={1.75} />
+                <span className="hidden md:inline">Sheet</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setRailOpen((open) => !open)}
+                aria-pressed={railOpen}
+                aria-label="Marks"
+                className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${railOpen ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+              >
+                <PanelRight size={16} strokeWidth={1.75} />
+                <span className="tabular-nums">{marks.length}</span>
+              </button>
+            </>
+          )}
+        </div>
+        {pdf && (
+          <div
+            className="flex items-center gap-2 overflow-x-auto border-t border-line-dark px-3 py-2 md:flex-wrap md:overflow-visible"
+            onMouseDown={(event) => {
+              const target = event.target as HTMLElement;
+              if (target.closest("input, textarea, select, option")) return;
+              if (!stayRef.current && !target.closest("[data-stay]")) return;
+              event.preventDefault();
+            }}
+          >
+            {TOOLS.map((item) => {
+              const Icon = item.icon;
+              const pressed = tool === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  title={item.hint}
+                  aria-label={item.hint}
+                  aria-pressed={pressed}
+                  onClick={() => chooseTool(item.id)}
+                  className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${pressed ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+                >
+                  <Icon size={16} strokeWidth={1.75} />
+                  <span className="hidden sm:inline">{item.name}</span>
+                </button>
+              );
+            })}
+            <span className="mx-1 h-6 w-px shrink-0 bg-line-dark" />
+            <button
+              type="button"
+              title="Undo (Ctrl+Z)"
+              aria-label="Undo"
+              disabled={!canUndo}
+              onClick={undo}
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+            >
+              <Undo2 size={16} strokeWidth={1.75} />
+              <span className="hidden sm:inline">Undo</span>
+            </button>
+            <button
+              type="button"
+              title="Redo (Ctrl+Shift+Z)"
+              aria-label="Redo"
+              disabled={!canRedo}
+              onClick={redo}
+              className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+            >
+              <Redo2 size={16} strokeWidth={1.75} />
+              <span className="hidden sm:inline">Redo</span>
+            </button>
+            <span className="mx-1 h-6 w-px shrink-0 bg-line-dark" />
+            <button
+              type="button"
+              aria-pressed={pass === 1}
+              onClick={() => choosePass(1)}
+              className={`h-11 shrink-0 rounded-md px-3 text-sm ${pass === 1 ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+            >
+              First read
+            </button>
+            <button
+              type="button"
+              aria-pressed={pass === 2}
+              onClick={() => choosePass(2)}
+              className={`h-11 shrink-0 rounded-md px-3 text-sm ${pass === 2 ? "bg-steel text-paper" : "bg-raised text-paper"}`}
+            >
+              Second read
+            </button>
+            {INKS.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                title={item.name}
+                aria-label={item.name}
+                aria-pressed={ink === item.id}
+                onClick={() => setInk(item.id)}
+                className={`inline-flex h-11 w-11 shrink-0 items-center justify-center ${ink === item.id ? "bg-stamp" : "bg-paper"}`}
+              >
+                <span className="block h-4 w-4 rounded-full" style={{ background: `var(--color-${item.id})` }} />
+              </button>
+            ))}
+            <label className="sr-only" htmlFor="quire-new-label">
+              Label for new marks
+            </label>
+            <select
+              id="quire-new-label"
+              value={label}
+              aria-label="Label for new marks"
+              onChange={(event) => setLabel(event.target.value as LabelId)}
+              className="h-11 shrink-0 rounded-md border border-line-dark bg-raised px-2 text-sm text-paper"
+            >
+              {LABELS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              role="switch"
+              data-stay=""
+              aria-checked={staySelection}
+              title="Stay selection. The passage stays selected, so the next highlight, underline, or strike uses it too."
+              onClick={toggleStay}
+              className={`h-11 shrink-0 rounded-md px-3 text-sm ${staySelection ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+            >
+              Stay selection
+            </button>
+            <span className="mx-1 h-6 w-px shrink-0 bg-line-dark" />
+            <label className="relative shrink-0">
+              <span className="sr-only">Find in the PDF</span>
+              <Search size={16} strokeWidth={1.75} className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" />
+              <input
+                ref={findRef}
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    stepHit(event.shiftKey ? -1 : 1);
+                  }
+                }}
+                placeholder="Find"
+                className="h-11 w-36 rounded-md border border-line-dark bg-raised pr-3 pl-9 text-sm text-paper outline-none focus:border-brass sm:w-48"
+              />
+            </label>
+            {query.trim().length >= 2 && (
+              <span className="shrink-0 text-sm text-muted tabular-nums">
+                {searching ? "Searching…" : hits.length ? `${hitIndex + 1} / ${hits.length}` : "No matches"}
+              </span>
+            )}
+            <span className="mx-1 h-6 w-px shrink-0 bg-line-dark" />
+            {!mate && (
+              <>
+                <button
+                  type="button"
+                  aria-pressed={viewMode === "single"}
+                  onClick={() => setViewMode("single")}
+                  className={`h-11 shrink-0 rounded-md px-3 text-sm ${viewMode === "single" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+                >
+                  Single
+                </button>
+                <button
+                  type="button"
+                  title="Odd pages beside even pages. Scrolling one side moves the other."
+                  aria-pressed={viewMode === "facing"}
+                  onClick={() => setViewMode("facing")}
+                  className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${viewMode === "facing" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+                >
+                  <Columns2 size={16} strokeWidth={1.75} />
+                  Facing
+                </button>
+                <button
+                  type="button"
+                  title="First half beside the second half. Scrolling one side moves the other."
+                  aria-pressed={viewMode === "halves"}
+                  onClick={() => setViewMode("halves")}
+                  className={`h-11 shrink-0 rounded-md px-3 text-sm ${viewMode === "halves" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+                >
+                  Halves
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              title="Compare. Open a second PDF beside this one. Scrolling stays linked. Marks stay on this file."
+              aria-label="Compare"
+              aria-pressed={!!mate}
+              disabled={mateBusy}
+              onClick={() => mateFileRef.current?.click()}
+              className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40 ${mate ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+            >
+              <Files size={16} strokeWidth={1.75} />
+              <span>{mateBusy ? "Opening…" : "Compare"}</span>
+            </button>
+          </div>
+        )}
+      </header>
+
+      <div className={`flex min-h-0 flex-1 ${dragOver ? "quire-dropping" : ""}`}>
+        {!pdf && (
+          <div className="min-w-0 flex-1 overflow-auto">
+            {busy ? (
+              <div className="flex min-h-full items-center justify-center px-6">
+                <p className="text-sm text-muted">{status || "Opening…"}</p>
+              </div>
+            ) : (
+              <div className="flex min-h-full items-center justify-center px-4 py-10">
+                <div className="quire-card w-full max-w-xl">
+                  <p className="quire-kicker">Portable proof desk</p>
+                  <h1 className="mt-4 text-4xl text-balance text-paper sm:text-5xl">
+                    Mark the text. Keep the file.
+                  </h1>
+                  <p className="mt-4 max-w-lg text-base text-pretty text-muted">
+                    Highlight, underline, or strike a passage, or drag a callout or an arrow. Each mark takes a note, a colour, and a first or second read.
+                    Nothing is uploaded. Marked PDF downloads only the pages you marked, for Acrobat or Preview. Or take a comment sheet.
+                  </p>
+                  <div className="mt-6 flex flex-wrap gap-2">
+                    <label
+                      htmlFor="quire-open"
+                      className="quire-file inline-flex h-11 items-center gap-2 rounded-md bg-brass px-4 text-sm text-paper"
+                    >
+                      <Upload size={16} strokeWidth={1.75} />
+                      Open a PDF
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => requestOpen("sample")}
+                      className="inline-flex h-11 items-center gap-2 rounded-md bg-raised px-4 text-sm text-paper"
+                    >
+                      <BookOpen size={16} strokeWidth={1.75} />
+                      Try the sample
+                    </button>
+                  </div>
+                  <p className="mt-6 max-w-lg text-sm text-pretty text-muted">
+                    The sample is a two-page interim results note. The revenue percentage does not match the figures.
+                    First read is the first time through the file. Second read is the check after that. Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Changes PDF downloads that list and the changed pages.
+                  </p>
+                  {error && (
+                    <p className="mt-4 text-sm text-paper" role="alert">
+                      {error}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+        {pdf && !pair && viewMode === "single" && (
+          <div ref={singleScrollRef} className="min-w-0 flex-1 overflow-auto">
+            <div className="px-3 py-6 sm:px-8">
+              {marks.length === 0 && (
+                <p className="mb-4 text-center text-sm text-muted">
+                  {tool === "callout"
+                    ? "Press where it should point, then drag the box into place. A selected callout can be dragged; the dot moves the point."
+                    : tool === "arrow"
+                      ? "Drag the arrow. Select it, then drag the line or either end."
+                      : tool === "select"
+                        ? "Select is on. Click a mark to move it, or choose Highlight, Underline, or Strike."
+                        : `Select a line. This mark is a ${pass === 1 ? "first read" : "second read"}, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}`}
+                </p>
+              )}
+              {renderPages(pdf, workNumbers, "work", scale)}
+            </div>
+          </div>
+        )}
+        {pdf && sides && (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+            <Pane title={viewMode === "facing" ? "Odd pages" : "First half"} scrollerRef={leftScrollRef}>
+              {sides.left.length ? renderPages(pdf, sides.left, "work", scale) : <EmptySide />}
+            </Pane>
+            <Pane title={viewMode === "facing" ? "Even pages" : "Second half"} scrollerRef={rightScrollRef}>
+              {sides.right.length ? renderPages(pdf, sides.right, "work", scale) : <EmptySide />}
+            </Pane>
+          </div>
+        )}
+        {pdf && mate && (
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+            <Pane title={fileName ?? "This file"} scrollerRef={leftScrollRef}>
+              {marks.length === 0 && (
+                <p className="mb-4 text-center text-sm text-muted">
+                  Select a line on this file. This mark is a {pass === 1 ? "first read" : "second read"}, in the colour chosen above.
+                </p>
+              )}
+              {renderPages(pdf, workNumbers, "work", scale)}
+            </Pane>
+            <Pane
+              title={mate.name}
+              scrollerRef={rightScrollRef}
+              extra={
+                <>
+                  <button
+                    type="button"
+                    disabled={comparing}
+                    title="Mark how this file differs from Compare. This file is the later copy. Added text is highlighted. Deleted text becomes a callout."
+                    onClick={() => void findChanges()}
+                    className="h-11 shrink-0 rounded-md bg-brass px-3 text-sm text-paper disabled:opacity-40"
+                  >
+                    {comparing ? "Comparing…" : "Changes"}
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={linked}
+                    title={linked ? "Scrolling is linked. Click to move each file on its own." : "Scrolling is independent. Click to link the two files again."}
+                    onClick={() => setLinked((value) => !value)}
+                    className={`h-11 shrink-0 rounded-md px-3 text-sm ${linked ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+                  >
+                    {linked ? "Linked" : "Free"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={closeMate}
+                    className="h-11 shrink-0 rounded-md bg-raised px-3 text-sm text-paper"
+                  >
+                    Close
+                  </button>
+                </>
+              }
+            >
+              <p className="mb-4 text-center text-sm text-muted">
+                Compare. Marks stay on the other file. Changes treats this file as the later copy.
+              </p>
+              {renderPages(mate.pdf, Array.from({ length: mate.numPages }, (_, index) => index + 1), "mate", mateScale)}
+            </Pane>
+          </div>
+        )}
+        {pdf && railOpen && (
+          <Rail
+            marks={marks}
+            activeId={activeId}
+            noteRef={noteRef}
+            onClose={() => setRailOpen(false)}
+            onPick={(id) => pickMark(id, true)}
+            onPatch={patchMark}
+            onNote={onNote}
+            onNoteBlur={commitNoteHistory}
+            onDelete={removeMark}
+            onClear={clearMarks}
+          />
+        )}
+      </div>
+
+      <footer className="flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-t border-line-dark px-3 text-sm text-muted">
+        <span className="hidden sm:inline">On this machine</span>
+        {pdf && (
+          <>
+            <label className="inline-flex items-center gap-2 tabular-nums">
+              {splitChrome ? "Left" : "Page"}
+              <input
+                key={`${viewMode}-${pair ? "pair" : "one"}-${page}`}
+                defaultValue={page}
+                inputMode="numeric"
+                aria-label={splitChrome ? "Left page" : "Page number"}
+                onBlur={(event) => jumpTo("a", event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    jumpTo("a", (event.target as HTMLInputElement).value);
+                    (event.target as HTMLInputElement).blur();
+                  }
+                }}
+                className="h-11 w-14 rounded-md bg-raised text-center text-paper"
+              />
+              {splitChrome ? null : `/ ${numPages}`}
+            </label>
+            {splitChrome && (
+              <label className="inline-flex items-center gap-2 tabular-nums">
+                Right
+                <input
+                  key={`${viewMode}-${pair ? "pair" : "one"}-mate-${matePage}`}
+                  defaultValue={matePage || ""}
+                  inputMode="numeric"
+                  aria-label="Right page"
+                  onBlur={(event) => jumpTo(pair ? "b" : "a", event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      jumpTo(pair ? "b" : "a", (event.target as HTMLInputElement).value);
+                      (event.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  className="h-11 w-14 rounded-md bg-raised text-center text-paper"
+                />
+              </label>
+            )}
+            <span className="inline-flex items-center">
+              <button type="button" aria-label="Zoom out" onClick={() => nudgeZoom(-1)} className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised">
+                <Minus size={14} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setZoomMode("fit")}
+                className="h-11 px-2 tabular-nums text-paper"
+                title="Fit width"
+              >
+                {zoomMode === "fit" ? "Fit" : `${Math.round(scale * 100)}%`}
+              </button>
+              <button type="button" aria-label="Zoom in" onClick={() => nudgeZoom(1)} className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised">
+                <Plus size={14} />
+              </button>
+            </span>
+          </>
+        )}
+        <span className="min-w-0 flex-1 truncate text-paper" aria-live="polite">
+          {error || status}
+        </span>
+      </footer>
+
+      <input
+        ref={fileRef}
+        id="quire-open"
+        type="file"
+        accept=".pdf"
+        className="sr-only"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) requestOpen(file);
+        }}
+      />
+      <input
+        ref={mateFileRef}
+        id="quire-compare"
+        type="file"
+        accept="application/pdf,.pdf"
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) void loadMate(file);
+        }}
+      />
+
+      {pending && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4">
+          <div className="w-full max-w-sm rounded-md bg-paper p-5 text-ink">
+            <h2 className="text-2xl text-balance">Open another file?</h2>
+            <p className="mt-2 text-sm text-pretty text-ink-soft">
+              Marks on this file stay in this browser. They are not uploaded.
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setPending(null)} className="h-11 rounded-md px-4 text-sm text-ink">
+                Stay
+              </button>
+              <button
+                type="button"
+                onClick={() => void beginOpen(pending)}
+                className="h-11 rounded-md bg-brass px-4 text-sm text-paper"
+              >
+                Open
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function isPdf(file: File) {
+  return file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+}
+
+function Pane({
+  title,
+  scrollerRef,
+  children,
+  extra,
+}: {
+  title: string;
+  scrollerRef: RefObject<HTMLDivElement | null>;
+  children: ReactNode;
+  extra?: ReactNode;
+}) {
+  return (
+    <section className="flex min-h-0 min-w-0 flex-1 flex-col border-t border-line-dark first:border-t-0 md:border-t-0 md:border-l md:first:border-l-0">
+      <div className="flex shrink-0 items-center gap-2 border-b border-line-dark px-3 py-1">
+        <p className="min-w-0 flex-1 truncate text-sm text-muted">{title}</p>
+        {extra}
+      </div>
+      <div ref={scrollerRef} className="min-h-0 flex-1 overflow-auto">
+        <div className="min-w-0 px-3 py-4">{children}</div>
+      </div>
+    </section>
+  );
+}
+
+function EmptySide() {
+  return <p className="py-6 text-sm text-muted">No page on this side.</p>;
+}
+
+function messageFrom(error: unknown): string {
+  if (error && typeof error === "object" && "name" in error) {
+    const name = String((error as { name: string }).name);
+    if (name === "PasswordException") return "This PDF is password-protected. Quire cannot open it.";
+    if (name === "InvalidPDFException") return "That file is not a PDF Quire can read.";
+  }
+  if (error instanceof Error && /password/i.test(error.message)) {
+    return "This PDF is password-protected. Quire cannot open it.";
+  }
+  return "Quire could not open that file. It may be damaged or not a PDF.";
+}

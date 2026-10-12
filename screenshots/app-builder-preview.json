@@ -1,0 +1,36 @@
+{
+  "url": "http://127.0.0.1:8080/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Quire",
+      "hasCanvas": false,
+      "bodyTextLen": 694,
+      "bodyTextHash": "0e12ebe29ad2bdba1469192fd152d655735356e7cb2fc3b8c08e835a19fd1480",
+      "bodyTextPrefix": "Quire Open PDF PORTABLE PROOF DESK Mark the text. Keep the file.",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Quire",
+      "hasCanvas": false,
+      "bodyTextLen": 674,
+      "bodyTextHash": "4904971bf023c77cb3f66fa3b1818be4dd09853e4f448b6c550ccdb1fc477dc0",
+      "bodyTextPrefix": "Quire Open PORTABLE PROOF DESK Mark the text. Keep the file. Hig",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-preview-mobile.png"
+    }
+  },
+  "brandWarnings": [],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-preview.json"
+}
