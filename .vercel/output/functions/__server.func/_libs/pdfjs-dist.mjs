@@ -1,4 +1,4 @@
-import { n as __exportAll } from "../_runtime.mjs";
+import { r as __exportAll } from "../_runtime.mjs";
 //#region node_modules/pdfjs-dist/build/pdf.mjs
 var pdf_exports = /* @__PURE__ */ __exportAll({
 	AbortException: () => AbortException,

@@ -23,9 +23,14 @@ await rm(nested);
 await rm(resolve(out, "portable"), { recursive: true });
 
 await cp(resolve(root, "portable/serve.ps1"), resolve(out, "serve.ps1"));
+await cp(resolve(root, "portable/register.ps1"), resolve(out, "register.ps1"));
 await cp(resolve(root, "portable/Start Quire.bat"), resolve(out, "Start Quire.bat"));
-const bat = await readFile(resolve(out, "Start Quire.bat"));
-await writeFile(resolve(out, "Start Quire.bat"), bat.toString("utf8").replace(/\r?\n/g, "\r\n"));
+await cp(resolve(root, "portable/Use Quire for PDFs.bat"), resolve(out, "Use Quire for PDFs.bat"));
+for (const name of ["Start Quire.bat", "Use Quire for PDFs.bat"]) {
+  const batPath = resolve(out, name);
+  const bat = await readFile(batPath);
+  await writeFile(batPath, bat.toString("utf8").replace(/\r?\n/g, "\r\n"));
+}
 await cp(resolve(root, "portable/README.txt"), resolve(out, "README.txt"));
 
 await mkdir(dirname(zipPath), { recursive: true });

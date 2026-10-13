@@ -175,7 +175,8 @@
   background: var(--color-stamp);
 }
 
-.quire-app .fixed .max-w-sm {
+.quire-app .fixed .max-w-sm,
+.quire-app .fixed .max-w-lg {
   border: 3px solid #000;
   box-shadow: 12px 12px 0 0 #000;
 }

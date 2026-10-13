@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
   ArrowUpRight,
@@ -38,7 +39,11 @@ import { comparisonResultsPdf, markedPagesPdf } from "@/lib/embed-marks";
 import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@/lib/pdf-client";
 import { buildSamplePdf } from "@/lib/sample-pdf";
 import { fingerprint, loadSession, saveSession } from "@/lib/session";
+import { fetchLaunchedPdf } from "@/lib/launch-pdf";
 import { tryPasscode, unlockStored } from "@/lib/passcode";
+import { notePasscode } from "@/lib/report";
+import { Usage } from "@/components/desk/Usage";
+import { checkBilingual, type PairCheck } from "@/lib/bilingual-check";
 
 const TOOLS: { id: Tool; name: string; hint: string; icon: typeof MousePointer2 }[] = [
   { id: "select", name: "Select", hint: "Select marks (V)", icon: MousePointer2 },
@@ -91,7 +96,7 @@ function nearestPage(el: HTMLElement) {
   return best;
 }
 
-export function Desk() {
+export function Desk({ studio = false, portable = false }: { studio?: boolean; portable?: boolean }) {
   const [pdf, setPdf] = useState<PdfDoc | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -126,10 +131,15 @@ export function Desk() {
   const [dragOver, setDragOver] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
   const [staySelection, setStaySelection] = useState(false);
-  const [paid, setPaid] = useState(false);
+  const [paid, setPaid] = useState(studio);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [gate, setGate] = useState<"open" | "compare" | "changes" | "pdf" | "sheet" | "changes-pdf" | "unlock" | null>(null);
   const [passInput, setPassInput] = useState("");
   const [passError, setPassError] = useState("");
+  const [figureReport, setFigureReport] = useState<PairCheck[] | null>(null);
+  const [figureBusy, setFigureBusy] = useState(false);
+  const [heldName, setHeldName] = useState("");
+  const heldLaunch = useRef<{ name: string; bytes: Uint8Array } | null>(null);
 
   const singleScrollRef = useRef<HTMLDivElement>(null);
   const leftScrollRef = useRef<HTMLDivElement>(null);
@@ -156,7 +166,7 @@ export function Desk() {
   const scaleRef = useRef(scale);
   const earlierNameRef = useRef<string | null>(null);
   const stayRef = useRef(false);
-  const paidRef = useRef(false);
+  const paidRef = useRef(studio);
   const applyRef = useRef<(kind: "highlight" | "underline" | "strikeout") => boolean>(() => false);
 
   marksRef.current = marks;
@@ -170,10 +180,35 @@ export function Desk() {
   paidRef.current = paid;
 
   useEffect(() => {
+    if (studio) {
+      paidRef.current = true;
+      setPaid(true);
+      return;
+    }
     const stored = unlockStored();
     paidRef.current = stored;
     setPaid(stored);
-  }, []);
+    if (stored) notePasscode("");
+  }, [studio]);
+
+  useEffect(() => {
+    if (!portable || window.location.hash !== "#launch") return;
+    let cancel = false;
+    void (async () => {
+      const launched = await fetchLaunchedPdf();
+      if (!launched || cancel) return;
+      if (studio || paidRef.current || unlockStored()) {
+        await loadBytes(launched.name, launched.bytes);
+        return;
+      }
+      heldLaunch.current = launched;
+      setHeldName(launched.name);
+      setStatus(`${launched.name} is waiting. Enter the passcode.`);
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [portable, studio]);
 
   useEffect(() => {
     try {
@@ -186,8 +221,8 @@ export function Desk() {
   }, []);
 
   useEffect(() => {
-    document.title = fileName ? `${fileName} — Quire` : "Quire";
-  }, [fileName]);
+    setFigureReport(null);
+  }, [viewMode]);
 
   useEffect(() => {
     if (window.innerWidth < 768) setRailOpen(false);
@@ -901,25 +936,53 @@ export function Desk() {
     setPassError("");
   }
 
-  async function submitPasscode() {
-    const ok = await tryPasscode(passInput);
+  function submitPasscode(openFile = false) {
+    const ok = tryPasscode(passInput);
     if (!ok) {
       setPassError("That passcode is not recognised.");
       return;
     }
     paidRef.current = true;
     setPaid(true);
+    notePasscode(passInput);
     const next = gate;
     setGate(null);
     setPassInput("");
     setPassError("");
-    setStatus("Passcode accepted. You can open a PDF.");
-    if (next === "open") fileRef.current?.click();
+    const held = heldLaunch.current;
+    heldLaunch.current = null;
+    if (held) {
+      setHeldName("");
+      setGate(null);
+      void loadBytes(held.name, held.bytes);
+      return;
+    }
+    setStatus("Passcode accepted. Choose the PDF.");
+    if (openFile || next === "open") fileRef.current?.click();
     else if (next === "compare") mateFileRef.current?.click();
     else if (next === "changes") void findChanges();
     else if (next === "pdf") void exportPdf();
     else if (next === "sheet") exportSheet();
     else if (next === "changes-pdf") void exportChanges();
+  }
+
+  async function checkFigures() {
+    const doc = pdfRef.current;
+    if (!doc || viewMode === "single" || figureBusy) return;
+    setFigureBusy(true);
+    setError("");
+    try {
+      const report = await checkBilingual(doc, viewMode === "halves" ? "halves" : "facing");
+      setFigureReport(report);
+      const missed = report.filter(
+        (pair) => pair.datesLeft.length || pair.datesRight.length || pair.figuresLeft.length || pair.figuresRight.length,
+      ).length;
+      setStatus(missed ? `${missed} page ${missed === 1 ? "pair differs" : "pairs differ"}.` : "Figures and dates match.");
+    } catch {
+      setError("Figures and dates could not be checked.");
+    } finally {
+      setFigureBusy(false);
+    }
   }
 
   const canUndo = undoRef.current.length > 0 || noteDirty.current;
@@ -1206,6 +1269,17 @@ export function Desk() {
                 >
                   Halves
                 </button>
+                {viewMode !== "single" && (
+                  <button
+                    type="button"
+                    title="Check figures and dates on the two sides. Dates match by day. Amounts ignore currency signs."
+                    disabled={figureBusy}
+                    onClick={() => void checkFigures()}
+                    className="h-11 shrink-0 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+                  >
+                    {figureBusy ? "Checking…" : "Figures"}
+                  </button>
+                )}
               </>
             )}
             <button
@@ -1241,7 +1315,7 @@ export function Desk() {
             ) : (
               <div className="flex min-h-full items-center justify-center px-4 py-10">
                 <div className="quire-card w-full max-w-xl">
-                  <p className="quire-kicker">Portable proof desk</p>
+                  <p className="quire-kicker">{studio ? "Studio copy" : "Portable proof desk"}</p>
                   <h1 className="mt-4 text-4xl text-balance text-paper sm:text-5xl">
                     Mark the text. Keep the file.
                   </h1>
@@ -1250,11 +1324,11 @@ export function Desk() {
                     Nothing is uploaded. Marked PDF downloads only the pages you marked, for Acrobat or Preview. Or take a comment sheet.
                   </p>
                   <div className="mt-6">
-                    {!paid && (
+                    {!studio && !paid && (
                       <form
                         onSubmit={(event) => {
                           event.preventDefault();
-                          void submitPasscode();
+                          submitPasscode(true);
                         }}
                       >
                         <label className="text-sm text-paper" htmlFor="quire-passcode">
@@ -1270,8 +1344,10 @@ export function Desk() {
                               setPassError("");
                             }}
                             autoComplete="off"
+                            autoCapitalize="off"
+                            autoCorrect="off"
                             spellCheck={false}
-                            className="h-11 min-w-0 flex-1 rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+                            className="h-11 min-w-0 flex-1 rounded-md bg-white px-3 text-sm text-ink outline-none"
                           />
                           <button type="submit" className="h-11 rounded-md bg-brass px-4 text-sm text-paper">
                             Unlock
@@ -1302,11 +1378,29 @@ export function Desk() {
                         <BookOpen size={16} strokeWidth={1.75} />
                         Try the sample
                       </button>
+                      {studio ? (
+                        <Link
+                          to="/"
+                          className="quire-file inline-flex h-11 items-center rounded-md bg-raised px-4 text-sm text-paper"
+                        >
+                          Customer version
+                        </Link>
+                      ) : (
+                        <Link
+                          to="/studio"
+                          className="quire-file inline-flex h-11 items-center rounded-md bg-raised px-4 text-sm text-paper"
+                        >
+                          Studio copy
+                        </Link>
+                      )}
                     </div>
                   </div>
                   <p className="mt-6 max-w-lg text-sm text-pretty text-muted">
-                    The sample needs no passcode. Enter the passcode, then open your own PDF.
-                    Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted.
+                    {studio
+                      ? "Studio copy. No passcode while the desk is being changed. The customer version still asks for one."
+                      : heldName
+                        ? `${heldName} is waiting. Enter the passcode to open it.`
+                        : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted.`}
                   </p>
                   {error && (
                     <p className="mt-4 text-sm text-paper" role="alert">
@@ -1413,7 +1507,10 @@ export function Desk() {
       </div>
 
       <footer className="flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-t border-line-dark px-3 text-sm text-muted">
-        <span>On this machine</span>
+        <button type="button" onClick={() => setUsageOpen(true)} className="h-11 shrink-0 rounded-md px-2 text-paper">
+          Usage
+        </button>
+        {studio && <span className="shrink-0 text-paper">Studio</span>}
         {pdf && (
           <>
             <label className="inline-flex items-center gap-2 tabular-nums">
@@ -1508,13 +1605,15 @@ export function Desk() {
         }}
       />
 
+      {usageOpen && <Usage onClose={() => setUsageOpen(false)} />}
+
       {gate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4">
           <form
             className="w-full max-w-sm rounded-md bg-paper p-5 text-ink"
             onSubmit={(event) => {
               event.preventDefault();
-              void submitPasscode();
+              submitPasscode();
             }}
           >
             <h2 className="text-2xl text-balance">Passcode</h2>
@@ -1533,8 +1632,9 @@ export function Desk() {
               }}
               autoFocus
               autoComplete="off"
+              autoCapitalize="off"
               spellCheck={false}
-              className="mt-1 h-11 w-full rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+              className="mt-1 h-11 w-full rounded-md bg-white px-3 text-sm text-ink outline-none"
             />
             {passError && (
               <p className="mt-3 text-sm" role="alert">
@@ -1550,6 +1650,45 @@ export function Desk() {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {figureReport && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4">
+          <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-md bg-paper p-5 text-ink">
+            <h2 className="text-2xl text-balance">Figures and dates</h2>
+            <p className="mt-2 text-sm text-pretty text-ink-soft">
+              Each left page is checked against the page beside it. A regex reads dates as days, and figures without currency signs or thousands separators.
+            </p>
+            <div className="mt-4 min-h-0 flex-1 overflow-auto">
+              {figureReport.map((pair) => {
+                const clean =
+                  pair.right !== null &&
+                  !pair.datesLeft.length &&
+                  !pair.datesRight.length &&
+                  !pair.figuresLeft.length &&
+                  !pair.figuresRight.length;
+                return (
+                  <section key={`${pair.left}-${pair.right ?? "none"}`} className="mt-4 border-t border-line pt-3 first:mt-0 first:border-t-0 first:pt-0">
+                    <h3 className="text-base">
+                      {pair.right ? `Pages ${pair.left} and ${pair.right}` : `Page ${pair.left}`}
+                    </h3>
+                    {!pair.right && <p className="mt-1 text-sm text-ink-soft">No page beside this one.</p>}
+                    {clean && <p className="mt-1 text-sm text-ink-soft">Figures and dates match.</p>}
+                    <GapList title={`Page ${pair.left} only`} dates={pair.datesLeft} figures={pair.figuresLeft} />
+                    {pair.right !== null && (
+                      <GapList title={`Page ${pair.right} only`} dates={pair.datesRight} figures={pair.figuresRight} />
+                    )}
+                  </section>
+                );
+              })}
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button type="button" onClick={() => setFigureReport(null)} className="h-11 rounded-md bg-brass px-4 text-sm text-paper">
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1575,6 +1714,31 @@ export function Desk() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function GapList({
+  title,
+  dates,
+  figures,
+}: {
+  title: string;
+  dates: PairCheck["datesLeft"];
+  figures: PairCheck["figuresLeft"];
+}) {
+  if (!dates.length && !figures.length) return null;
+  return (
+    <div className="mt-2">
+      <p className="text-sm">{title}</p>
+      <ul className="mt-1 list-disc pl-5 text-sm text-ink-soft">
+        {dates.map((item, index) => (
+          <li key={`d-${index}`}>{item.extra > 1 ? `Date: ${item.raw} ×${item.extra}` : `Date: ${item.raw}`}</li>
+        ))}
+        {figures.map((item, index) => (
+          <li key={`f-${index}`}>{item.extra > 1 ? `Figure: ${item.raw} ×${item.extra}` : `Figure: ${item.raw}`}</li>
+        ))}
+      </ul>
     </div>
   );
 }

@@ -1,11 +1,58 @@
-import { i as __toESM } from "../_runtime.mjs";
-import { t as __esmMin } from "./rolldown-runtime-DkIiUugF.mjs";
-import { K as require_react, b as require_jsx_runtime } from "../_libs/@tanstack/react-router+[...].mjs";
+import { o as __toESM } from "../_runtime.mjs";
+import { n as __exportAll, t as __esmMin } from "./rolldown-runtime-DkIiUugF.mjs";
+import { J as require_react, x as require_jsx_runtime, y as Link } from "../_libs/@tanstack/react-router+[...].mjs";
+import { a as TSS_SERVER_FUNCTION, c as getServerFnById, n as init_esm$2, r as createServerFn, s as init_getServerFnById } from "./ssr.mjs";
 import { S as ArrowUpRight, _ as Files, b as Columns2, c as Search, d as PanelRight, f as MousePointer2, g as GitCompare, h as Highlighter, i as Underline, l as Redo2, m as MessageSquare, n as Upload, o as Trash2, p as Minus, r as Undo2, s as Strikethrough, t as X, u as Plus, v as FileText, x as BookOpen, y as FileDown } from "../_libs/lucide-react.mjs";
+import { i as unlockStored, r as tryPasscode, t as init_passcode } from "./passcode-CCf-E2Pc.mjs";
+import { t as init_esm } from "./esm-DX00ZYfL.mjs";
 import { a as PDFHexString, i as PDFString, n as StandardFonts, o as PDFRef, r as rgb, s as PDFName, t as PDFDocument } from "../_libs/pdf-lib.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-Bk1cNgFP.js
+//#region node_modules/.nitro/vite/services/ssr/assets/Desk-DZv9QAvO.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
+var createSsrRpc;
+var init_createSsrRpc = __esmMin((() => {
+	init_getServerFnById();
+	init_esm$2();
+	createSsrRpc = (functionId) => {
+		const url = "/_serverFn/" + functionId;
+		const serverFnMeta = { id: functionId };
+		const fn = async (...args) => {
+			return (await getServerFnById(functionId, { origin: "server" }))(...args);
+		};
+		return Object.assign(fn, {
+			url,
+			serverFnMeta,
+			[TSS_SERVER_FUNCTION]: true
+		});
+	};
+}));
+var init_ssr_rpc = __esmMin((() => {
+	init_createSsrRpc();
+}));
+var usage_exports = /* @__PURE__ */ __exportAll({
+	loadUsage: () => loadUsage,
+	noteUnlock: () => noteUnlock
+});
+var noteUnlock;
+var loadUsage;
+var init_usage = __esmMin((() => {
+	init_ssr_rpc();
+	init_esm();
+	noteUnlock = createServerFn({ method: "POST" }).validator((input) => {
+		if (!input || typeof input !== "object") throw new Error("Missing unlock note.");
+		const data = input;
+		return {
+			code: typeof data.code === "string" ? data.code.slice(0, 80) : "",
+			browser: typeof data.browser === "string" ? data.browser.slice(0, 64) : "",
+			agent: typeof data.agent === "string" ? data.agent.slice(0, 40) : ""
+		};
+	}).handler(createSsrRpc("336e109a772a1a734805de279b3f56df868f0b93a7aa4f30a984c44f21461a80"));
+	loadUsage = createServerFn({ method: "POST" }).validator((input) => {
+		if (!input || typeof input !== "object") throw new Error("Missing owner code.");
+		const owner = input.owner;
+		return { owner: typeof owner === "string" ? owner.slice(0, 80) : "" };
+	}).handler(createSsrRpc("9f8ea6b9b7c6c5268e4b8e4f3ee2c6cb8076e86cc6778203f688801636a7303e"));
+}));
 function quadsFromPoints(points) {
 	if (!points || points.length < 8) return [];
 	const quads = [];
@@ -61,6 +108,14 @@ function mergeBoxes(boxes) {
 	}
 	return merged;
 }
+function contentOrigin(pageEl) {
+	const box = pageEl.getBoundingClientRect();
+	const style = getComputedStyle(pageEl);
+	return {
+		x: box.left + (parseFloat(style.borderLeftWidth) || 0),
+		y: box.top + (parseFloat(style.borderTopWidth) || 0)
+	};
+}
 function selectionOnPage(pageEl, viewport) {
 	const selection = window.getSelection();
 	if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
@@ -70,13 +125,13 @@ function selectionOnPage(pageEl, viewport) {
 	if (!element || !pageEl.contains(element)) return null;
 	const quote = range.toString().replace(/\s+/g, " ").trim();
 	if (!quote) return null;
-	const pageBox = pageEl.getBoundingClientRect();
+	const pageBox = contentOrigin(pageEl);
 	const boxes = [];
 	for (const rect of range.getClientRects()) {
 		if (rect.width < 1 || rect.height < 1) continue;
 		boxes.push({
-			x: rect.left - pageBox.left,
-			y: rect.top - pageBox.top,
+			x: rect.left - pageBox.x,
+			y: rect.top - pageBox.y,
 			w: rect.width,
 			h: rect.height
 		});
@@ -102,8 +157,8 @@ function selectionOnPage(pageEl, viewport) {
 	};
 }
 function clientToPdf(pageEl, viewport, clientX, clientY) {
-	const box = pageEl.getBoundingClientRect();
-	const [x, y] = viewport.convertToPdfPoint(clientX - box.left, clientY - box.top);
+	const box = contentOrigin(pageEl);
+	const [x, y] = viewport.convertToPdfPoint(clientX - box.x, clientY - box.y);
 	return {
 		x,
 		y
@@ -490,6 +545,18 @@ async function searchPdf(pdf, query) {
 		if (hits.length >= 200) break;
 	}
 	return hits;
+}
+async function pagePlainText(pdf, pageNumber) {
+	const content = await (await pdf.getPage(pageNumber)).getTextContent();
+	let text = "";
+	for (const item of content.items) {
+		if (!("str" in item)) continue;
+		const run = item;
+		if (text && run.str && !/\s$/.test(text) && !/^\s/.test(run.str)) text += " ";
+		text += run.str;
+		if (run.hasEOL) text += "\n";
+	}
+	return text.normalize("NFKC");
 }
 var loading;
 var KIND_BY_SUBTYPE;
@@ -2174,31 +2241,404 @@ var init_session = __esmMin((() => {
 	DB_NAME = "quire-desk";
 	STORE = "sessions";
 }));
-function unlockStored() {
+async function fetchLaunchedPdf() {
+	if (typeof window === "undefined" || window.location.hash !== "#launch") return null;
 	try {
-		return localStorage.getItem(STORAGE_KEY) === PASS_HASH;
+		const info = await fetch("/__quire/launch.json", { cache: "no-store" });
+		if (!info.ok) return null;
+		const data = await info.json();
+		const name = typeof data.name === "string" ? data.name : "";
+		const token = data.token == null ? "" : String(data.token);
+		if (!name || !token || claimed === token) return null;
+		claimed = token;
+		const pdf = await fetch("/__quire/launch.pdf", { cache: "no-store" });
+		if (!pdf.ok) return null;
+		return {
+			name,
+			token,
+			bytes: new Uint8Array(await pdf.arrayBuffer())
+		};
 	} catch {
-		return false;
+		return null;
 	}
 }
-async function digest(input) {
-	const bytes = new TextEncoder().encode(input.trim().toLowerCase());
-	const hash = await crypto.subtle.digest("SHA-256", bytes);
-	return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-async function tryPasscode(input) {
-	if (!input.trim()) return false;
-	if (await digest(input) !== PASS_HASH) return false;
+var claimed;
+var init_launch_pdf = __esmMin((() => {
+	claimed = "";
+}));
+function browserKey() {
 	try {
-		localStorage.setItem(STORAGE_KEY, PASS_HASH);
-	} catch {}
-	return true;
+		const existing = localStorage.getItem(KEY);
+		if (existing && BROWSER.test(existing)) return existing;
+		const id = crypto.randomUUID();
+		localStorage.setItem(KEY, id);
+		return id;
+	} catch {
+		return "00000000-0000-4000-8000-000000000000";
+	}
 }
-var PASS_HASH;
-var STORAGE_KEY;
-var init_passcode = __esmMin((() => {
-	PASS_HASH = "caf206607793365b982e1cf1c33b65da6cbab2d1fb61a25b86a2d61c76d1be4c";
-	STORAGE_KEY = "quire-unlock";
+function agentLabel() {
+	const ua = typeof navigator === "undefined" ? "" : navigator.userAgent;
+	return `${/Edg\//.test(ua) ? "Edge" : /Chrome\//.test(ua) ? "Chrome" : /Firefox\//.test(ua) ? "Firefox" : /Safari\//.test(ua) ? "Safari" : "Browser"} · ${/iPhone|iPad/.test(ua) ? "iPhone" : /Android/.test(ua) ? "Android" : /Windows/.test(ua) ? "Windows" : /Mac/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "Other"}`;
+}
+function notePasscode(code) {
+	const browser = browserKey();
+	const agent = agentLabel();
+	Promise.resolve().then(() => (init_usage(), usage_exports)).then(({ noteUnlock }) => noteUnlock({ data: {
+		code,
+		browser,
+		agent
+	} })).catch(() => void 0);
+}
+var KEY;
+var BROWSER;
+var init_report = __esmMin((() => {
+	KEY = "quire-browser";
+	BROWSER = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+}));
+function when(iso) {
+	const date = new Date(iso);
+	if (Number.isNaN(date.getTime())) return iso;
+	return date.toLocaleString(void 0, {
+		month: "short",
+		day: "numeric",
+		hour: "2-digit",
+		minute: "2-digit"
+	});
+}
+function Usage({ onClose }) {
+	const [owner, setOwner] = (0, import_react.useState)("");
+	const [error, setError] = (0, import_react.useState)("");
+	const [busy, setBusy] = (0, import_react.useState)(false);
+	const [report, setReport] = (0, import_react.useState)(null);
+	async function show(event) {
+		event.preventDefault();
+		setBusy(true);
+		setError("");
+		try {
+			const next = await loadUsage({ data: { owner } });
+			if (!next.ok) {
+				setReport(null);
+				setError("That owner code is not recognised.");
+				return;
+			}
+			setReport(next);
+		} catch {
+			setReport(null);
+			setError("The report could not be loaded.");
+		} finally {
+			setBusy(false);
+		}
+	}
+	const computers = report?.browsers ?? 0;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+		className: "fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4",
+		children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+			className: "flex max-h-[80vh] w-full max-w-lg flex-col rounded-md bg-paper p-5 text-ink",
+			role: "dialog",
+			"aria-modal": "true",
+			"aria-labelledby": "quire-usage-title",
+			children: [
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
+					id: "quire-usage-title",
+					className: "text-2xl text-balance",
+					children: "Passcode use"
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+					className: "mt-2 text-sm text-pretty text-ink-soft",
+					children: "Each computer that accepted the passcode. The PDF is not included. More than one computer means the code was typed somewhere else. A phone and a laptop count as two."
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+					onSubmit: (event) => void show(event),
+					className: "mt-4",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+						className: "block text-sm",
+						htmlFor: "quire-owner",
+						children: "Owner code"
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+						className: "mt-1 flex flex-wrap gap-2",
+						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							id: "quire-owner",
+							value: owner,
+							onChange: (event) => {
+								setOwner(event.target.value);
+								setError("");
+							},
+							autoFocus: true,
+							autoComplete: "off",
+							autoCapitalize: "off",
+							spellCheck: false,
+							className: "h-11 min-w-0 flex-1 rounded-md bg-white px-3 text-sm text-ink outline-none"
+						}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+							type: "submit",
+							disabled: busy,
+							className: "h-11 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40",
+							children: busy ? "Loading" : "Show"
+						})]
+					})]
+				}),
+				error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+					className: "mt-3 text-sm",
+					role: "alert",
+					children: error
+				}),
+				report && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "mt-4 min-h-0 flex-1 overflow-auto",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+						className: "text-sm text-ink",
+						children: computers === 0 ? "No computer has entered the passcode on this copy yet." : computers === 1 ? "1 computer has used the passcode." : `${computers} computers have used the passcode.`
+					}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("ul", {
+						className: "mt-3",
+						children: report.rows.map((row) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("li", {
+							className: "border-t border-line py-3 text-sm first:border-t-0",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+								className: "text-ink",
+								children: row.agent
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+								className: "mt-1 text-ink-soft",
+								children: [
+									row.browser.slice(0, 8),
+									" · First ",
+									when(row.firstSeen),
+									" · Last ",
+									when(row.lastSeen),
+									" ·",
+									" ",
+									row.visits === 1 ? "1 visit" : `${row.visits} visits`
+								]
+							})]
+						}, row.browser))
+					})]
+				}),
+				/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+					className: "mt-5 flex justify-end",
+					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: onClose,
+						className: "h-11 rounded-md px-4 text-sm text-ink",
+						children: "Close"
+					})
+				})
+			]
+		})
+	});
+}
+var init_Usage = __esmMin((() => {
+	init_usage();
+}));
+function iso(year, month, day) {
+	if (year < 100) year += year >= 70 ? 1900 : 2e3;
+	if (year < 1900 || year > 2100 || month < 1 || month > 12 || day < 1 || day > 31) return null;
+	return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+function monthOf(name) {
+	return MONTHS[name.toLowerCase().replace(/\.$/, "")] ?? 0;
+}
+function canonicalNumber(value) {
+	if (!Number.isFinite(value)) return null;
+	const rounded = Math.round(value * 1e6) / 1e6;
+	if (Object.is(rounded, -0)) return "0";
+	if (Number.isInteger(rounded)) return String(rounded);
+	return String(rounded);
+}
+function scaleOf(word) {
+	if (!word) return 1;
+	const name = word.replace(/\s+/g, "").toLowerCase();
+	if (name === "million" || name === "mn" || name === "百萬" || name === "百万") return 1e6;
+	if (name === "billion" || name === "bn" || name === "十億" || name === "十亿") return 1e9;
+	if (name === "萬" || name === "万") return 1e4;
+	if (name === "億" || name === "亿") return 1e8;
+	if (name === "cent" || name === "cents" || name === "仙") return .01;
+	return 1;
+}
+function percentOf(word) {
+	if (!word) return false;
+	return /%|％|个百分点|percent/.test(word.toLowerCase());
+}
+function tokensIn(source) {
+	const text = source.normalize("NFKC");
+	const tokens = [];
+	const mask = new Array(text.length).fill(false);
+	const dates = [
+		{
+			re: /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g,
+			key: (match) => iso(+match[1], +match[2], +match[3])
+		},
+		{
+			re: new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH})\\.?\\s+(\\d{4})\\b`, "gi"),
+			key: (match) => iso(+match[3], monthOf(match[2]), +match[1])
+		},
+		{
+			re: new RegExp(`\\b(${MONTH})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "gi"),
+			key: (match) => iso(+match[3], monthOf(match[1]), +match[2])
+		},
+		{
+			re: /\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b/g,
+			key: (match) => iso(+match[1], +match[2], +match[3])
+		},
+		{
+			re: /\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/g,
+			key: (match) => iso(+match[3], +match[2], +match[1])
+		},
+		{
+			re: /(\d{4})\s*年\s*(\d{1,2})\s*月/g,
+			key: (match) => {
+				const month = +match[2];
+				const year = +match[1];
+				if (year < 1900 || year > 2100 || month < 1 || month > 12) return null;
+				return `${year}-${String(month).padStart(2, "0")}`;
+			}
+		}
+	];
+	for (const pattern of dates) for (const match of text.matchAll(pattern.re)) {
+		const start = match.index ?? 0;
+		const end = start + match[0].length;
+		if (mask.slice(start, end).some(Boolean)) continue;
+		const key = pattern.key(match);
+		if (!key) continue;
+		mask.fill(true, start, end);
+		tokens.push({
+			kind: "date",
+			key,
+			raw: match[0].replace(/\s+/g, " ").trim()
+		});
+	}
+	const bare = [...text].map((char, index) => mask[index] ? " " : char).join("");
+	for (const match of bare.matchAll(/(?:\(|^|[^\d.])((?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(?:\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:十[亿億]|百[万萬]|[亿億]|[万萬]|million|billion|mn|bn|cents?|仙|%|％|个百分点|per\s*cent)?\)?)/gi)) {
+		const raw = match[1].replace(/\s+/g, " ").trim();
+		const parts = raw.replace(/[()]/g, "").match(/^(?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(.*)$/i);
+		if (!parts) continue;
+		const magnitude = Number(parts[1].replace(/[,，]/g, ""));
+		if (!Number.isFinite(magnitude)) continue;
+		const tail = parts[2] ?? "";
+		const negative = raw.startsWith("(") && raw.endsWith(")");
+		const value = magnitude * scaleOf(tail) * (negative ? -1 : 1);
+		const key = percentOf(tail) ? `${canonicalNumber(value)}%` : canonicalNumber(value);
+		if (!key) continue;
+		tokens.push({
+			kind: "figure",
+			key,
+			raw: raw.replace(/[()]/g, "")
+		});
+	}
+	return tokens;
+}
+function gaps(left, right, kind) {
+	const tally = (list) => {
+		const map = /* @__PURE__ */ new Map();
+		for (const token of list) {
+			if (token.kind !== kind) continue;
+			const current = map.get(token.key);
+			if (current) current.count += 1;
+			else map.set(token.key, {
+				count: 1,
+				raw: token.raw
+			});
+		}
+		return map;
+	};
+	const a = tally(left);
+	const b = tally(right);
+	const only = (source, other) => {
+		const found = [];
+		for (const [key, item] of source) {
+			const extra = item.count - (other.get(key)?.count ?? 0);
+			if (extra > 0) found.push({
+				raw: item.raw,
+				extra
+			});
+		}
+		return found;
+	};
+	return {
+		left: only(a, b),
+		right: only(b, a)
+	};
+}
+function pagePairs(count, mode) {
+	if (mode === "facing") {
+		const pairs = [];
+		for (let page = 1; page <= count; page += 2) pairs.push([page, page + 1 <= count ? page + 1 : null]);
+		return pairs;
+	}
+	const mid = Math.ceil(count / 2);
+	const pairs = [];
+	for (let index = 0; index < mid; index += 1) {
+		const right = mid + index + 1;
+		pairs.push([index + 1, right <= count ? right : null]);
+	}
+	return pairs;
+}
+function compareSides(leftText, rightText) {
+	const left = tokensIn(leftText);
+	const right = tokensIn(rightText);
+	const dates = gaps(left, right, "date");
+	const figures = gaps(left, right, "figure");
+	return {
+		datesLeft: dates.left,
+		datesRight: dates.right,
+		figuresLeft: figures.left,
+		figuresRight: figures.right
+	};
+}
+async function checkBilingual(pdf, mode) {
+	const pairs = pagePairs(pdf.numPages, mode);
+	const texts = /* @__PURE__ */ new Map();
+	const needed = /* @__PURE__ */ new Set();
+	for (const [left, right] of pairs) {
+		needed.add(left);
+		if (right) needed.add(right);
+	}
+	await Promise.all([...needed].map(async (page) => {
+		texts.set(page, await pagePlainText(pdf, page));
+	}));
+	return pairs.map(([left, right]) => {
+		if (!right) return {
+			left,
+			right,
+			datesLeft: [],
+			datesRight: [],
+			figuresLeft: [],
+			figuresRight: []
+		};
+		return {
+			left,
+			right,
+			...compareSides(texts.get(left) ?? "", texts.get(right) ?? "")
+		};
+	});
+}
+var MONTHS;
+var MONTH;
+var init_bilingual_check = __esmMin((() => {
+	init_pdf_client();
+	MONTHS = {
+		january: 1,
+		jan: 1,
+		february: 2,
+		feb: 2,
+		march: 3,
+		mar: 3,
+		april: 4,
+		apr: 4,
+		may: 5,
+		june: 6,
+		jun: 6,
+		july: 7,
+		jul: 7,
+		august: 8,
+		aug: 8,
+		september: 9,
+		sept: 9,
+		sep: 9,
+		october: 10,
+		oct: 10,
+		november: 11,
+		nov: 11,
+		december: 12,
+		dec: 12
+	};
+	MONTH = "January|February|March|April|May|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sept|Sep|Oct|Nov|Dec";
 }));
 function pageSides(count, mode) {
 	const left = [];
@@ -2229,7 +2669,7 @@ function nearestPage(el) {
 	});
 	return best;
 }
-function Desk() {
+function Desk({ studio = false, portable = false }) {
 	const [pdf, setPdf] = (0, import_react.useState)(null);
 	const [fileName, setFileName] = (0, import_react.useState)(null);
 	const [numPages, setNumPages] = (0, import_react.useState)(0);
@@ -2264,10 +2704,15 @@ function Desk() {
 	const [dragOver, setDragOver] = (0, import_react.useState)(false);
 	const [historyTick, setHistoryTick] = (0, import_react.useState)(0);
 	const [staySelection, setStaySelection] = (0, import_react.useState)(false);
-	const [paid, setPaid] = (0, import_react.useState)(false);
+	const [paid, setPaid] = (0, import_react.useState)(studio);
+	const [usageOpen, setUsageOpen] = (0, import_react.useState)(false);
 	const [gate, setGate] = (0, import_react.useState)(null);
 	const [passInput, setPassInput] = (0, import_react.useState)("");
 	const [passError, setPassError] = (0, import_react.useState)("");
+	const [figureReport, setFigureReport] = (0, import_react.useState)(null);
+	const [figureBusy, setFigureBusy] = (0, import_react.useState)(false);
+	const [heldName, setHeldName] = (0, import_react.useState)("");
+	const heldLaunch = (0, import_react.useRef)(null);
 	const singleScrollRef = (0, import_react.useRef)(null);
 	const leftScrollRef = (0, import_react.useRef)(null);
 	const rightScrollRef = (0, import_react.useRef)(null);
@@ -2297,7 +2742,7 @@ function Desk() {
 	const scaleRef = (0, import_react.useRef)(scale);
 	const earlierNameRef = (0, import_react.useRef)(null);
 	const stayRef = (0, import_react.useRef)(false);
-	const paidRef = (0, import_react.useRef)(false);
+	const paidRef = (0, import_react.useRef)(studio);
 	const applyRef = (0, import_react.useRef)(() => false);
 	marksRef.current = marks;
 	importedRef.current = imported;
@@ -2313,10 +2758,34 @@ function Desk() {
 	stayRef.current = staySelection;
 	paidRef.current = paid;
 	(0, import_react.useEffect)(() => {
+		if (studio) {
+			paidRef.current = true;
+			setPaid(true);
+			return;
+		}
 		const stored = unlockStored();
 		paidRef.current = stored;
 		setPaid(stored);
-	}, []);
+		if (stored) notePasscode("");
+	}, [studio]);
+	(0, import_react.useEffect)(() => {
+		if (!portable || window.location.hash !== "#launch") return;
+		let cancel = false;
+		(async () => {
+			const launched = await fetchLaunchedPdf();
+			if (!launched || cancel) return;
+			if (studio || paidRef.current || unlockStored()) {
+				await loadBytes(launched.name, launched.bytes);
+				return;
+			}
+			heldLaunch.current = launched;
+			setHeldName(launched.name);
+			setStatus(`${launched.name} is waiting. Enter the passcode.`);
+		})();
+		return () => {
+			cancel = true;
+		};
+	}, [portable, studio]);
 	(0, import_react.useEffect)(() => {
 		try {
 			const stored = localStorage.getItem("quire-stay-selection") === "1";
@@ -2325,8 +2794,8 @@ function Desk() {
 		} catch {}
 	}, []);
 	(0, import_react.useEffect)(() => {
-		document.title = fileName ? `${fileName} — Quire` : "Quire";
-	}, [fileName]);
+		setFigureReport(null);
+	}, [viewMode]);
 	(0, import_react.useEffect)(() => {
 		if (window.innerWidth < 768) setRailOpen(false);
 	}, []);
@@ -3007,24 +3476,49 @@ function Desk() {
 		setPassInput("");
 		setPassError("");
 	}
-	async function submitPasscode() {
-		if (!await tryPasscode(passInput)) {
+	function submitPasscode(openFile = false) {
+		if (!tryPasscode(passInput)) {
 			setPassError("That passcode is not recognised.");
 			return;
 		}
 		paidRef.current = true;
 		setPaid(true);
+		notePasscode(passInput);
 		const next = gate;
 		setGate(null);
 		setPassInput("");
 		setPassError("");
-		setStatus("Passcode accepted. You can open a PDF.");
-		if (next === "open") fileRef.current?.click();
+		const held = heldLaunch.current;
+		heldLaunch.current = null;
+		if (held) {
+			setHeldName("");
+			setGate(null);
+			loadBytes(held.name, held.bytes);
+			return;
+		}
+		setStatus("Passcode accepted. Choose the PDF.");
+		if (openFile || next === "open") fileRef.current?.click();
 		else if (next === "compare") mateFileRef.current?.click();
 		else if (next === "changes") findChanges();
 		else if (next === "pdf") exportPdf();
 		else if (next === "sheet") exportSheet();
 		else if (next === "changes-pdf") exportChanges();
+	}
+	async function checkFigures() {
+		const doc = pdfRef.current;
+		if (!doc || viewMode === "single" || figureBusy) return;
+		setFigureBusy(true);
+		setError("");
+		try {
+			const report = await checkBilingual(doc, viewMode === "halves" ? "halves" : "facing");
+			setFigureReport(report);
+			const missed = report.filter((pair) => pair.datesLeft.length || pair.datesRight.length || pair.figuresLeft.length || pair.figuresRight.length).length;
+			setStatus(missed ? `${missed} page ${missed === 1 ? "pair differs" : "pairs differ"}.` : "Figures and dates match.");
+		} catch {
+			setError("Figures and dates could not be checked.");
+		} finally {
+			setFigureBusy(false);
+		}
 	}
 	const canUndo = undoRef.current.length > 0 || noteDirty.current;
 	const canRedo = redoRef.current.length > 0;
@@ -3315,6 +3809,14 @@ function Desk() {
 								onClick: () => setViewMode("halves"),
 								className: `h-11 shrink-0 rounded-md px-3 text-sm ${viewMode === "halves" ? "bg-brass text-paper" : "bg-raised text-paper"}`,
 								children: "Halves"
+							}),
+							viewMode !== "single" && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								title: "Check figures and dates on the two sides. Dates match by day. Amounts ignore currency signs.",
+								disabled: figureBusy,
+								onClick: () => void checkFigures(),
+								className: "h-11 shrink-0 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40",
+								children: figureBusy ? "Checking…" : "Figures"
 							})
 						] }),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
@@ -3358,7 +3860,7 @@ function Desk() {
 								children: [
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "quire-kicker",
-										children: "Portable proof desk"
+										children: studio ? "Studio copy" : "Portable proof desk"
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h1", {
 										className: "mt-4 text-4xl text-balance text-paper sm:text-5xl",
@@ -3370,10 +3872,10 @@ function Desk() {
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 										className: "mt-6",
-										children: [!paid && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+										children: [!studio && !paid && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
 											onSubmit: (event) => {
 												event.preventDefault();
-												submitPasscode();
+												submitPasscode(true);
 											},
 											children: [
 												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
@@ -3395,8 +3897,10 @@ function Desk() {
 															setPassError("");
 														},
 														autoComplete: "off",
+														autoCapitalize: "off",
+														autoCorrect: "off",
 														spellCheck: false,
-														className: "h-11 min-w-0 flex-1 rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+														className: "h-11 min-w-0 flex-1 rounded-md bg-white px-3 text-sm text-ink outline-none"
 													}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 														type: "submit",
 														className: "h-11 rounded-md bg-brass px-4 text-sm text-paper",
@@ -3411,29 +3915,41 @@ function Desk() {
 											]
 										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 											className: `flex flex-wrap gap-2 ${paid ? "" : "mt-4"}`,
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-												type: "button",
-												disabled: !paid,
-												onClick: () => fileRef.current?.click(),
-												className: "quire-file inline-flex h-11 items-center gap-2 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, {
-													size: 16,
-													strokeWidth: 1.75
-												}), "Open a PDF"]
-											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-												type: "button",
-												onClick: () => requestOpen("sample"),
-												className: "inline-flex h-11 items-center gap-2 rounded-md bg-raised px-4 text-sm text-paper",
-												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(BookOpen, {
-													size: 16,
-													strokeWidth: 1.75
-												}), "Try the sample"]
-											})]
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+													type: "button",
+													disabled: !paid,
+													onClick: () => fileRef.current?.click(),
+													className: "quire-file inline-flex h-11 items-center gap-2 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, {
+														size: 16,
+														strokeWidth: 1.75
+													}), "Open a PDF"]
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+													type: "button",
+													onClick: () => requestOpen("sample"),
+													className: "inline-flex h-11 items-center gap-2 rounded-md bg-raised px-4 text-sm text-paper",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(BookOpen, {
+														size: 16,
+														strokeWidth: 1.75
+													}), "Try the sample"]
+												}),
+												studio ? /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Link, {
+													to: "/",
+													className: "quire-file inline-flex h-11 items-center rounded-md bg-raised px-4 text-sm text-paper",
+													children: "Customer version"
+												}) : /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Link, {
+													to: "/studio",
+													className: "quire-file inline-flex h-11 items-center rounded-md bg-raised px-4 text-sm text-paper",
+													children: "Studio copy"
+												})
+											]
 										})]
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "mt-6 max-w-lg text-sm text-pretty text-muted",
-										children: "The sample needs no passcode. Enter the passcode, then open your own PDF. Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted."
+										children: studio ? "Studio copy. No passcode while the desk is being changed. The customer version still asks for one." : heldName ? `${heldName} is waiting. Enter the passcode to open it.` : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted.`
 									}),
 									error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "mt-4 text-sm text-paper",
@@ -3526,7 +4042,16 @@ function Desk() {
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("footer", {
 				className: "flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-t border-line-dark px-3 text-sm text-muted",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "On this machine" }),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						type: "button",
+						onClick: () => setUsageOpen(true),
+						className: "h-11 shrink-0 rounded-md px-2 text-paper",
+						children: "Usage"
+					}),
+					studio && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+						className: "shrink-0 text-paper",
+						children: "Studio"
+					}),
 					pdf && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
 							className: "inline-flex items-center gap-2 tabular-nums",
@@ -3627,6 +4152,7 @@ function Desk() {
 					if (file) loadMate(file);
 				}
 			}),
+			usageOpen && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Usage, { onClose: () => setUsageOpen(false) }),
 			gate && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4",
 				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
@@ -3658,8 +4184,9 @@ function Desk() {
 							},
 							autoFocus: true,
 							autoComplete: "off",
+							autoCapitalize: "off",
 							spellCheck: false,
-							className: "mt-1 h-11 w-full rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+							className: "mt-1 h-11 w-full rounded-md bg-white px-3 text-sm text-ink outline-none"
 						}),
 						passError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "mt-3 text-sm",
@@ -3678,6 +4205,64 @@ function Desk() {
 								className: "h-11 rounded-md bg-brass px-4 text-sm text-paper",
 								children: "Unlock"
 							})]
+						})
+					]
+				})
+			}),
+			figureReport && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+					className: "flex max-h-[80vh] w-full max-w-lg flex-col rounded-md bg-paper p-5 text-ink",
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
+							className: "text-2xl text-balance",
+							children: "Figures and dates"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "mt-2 text-sm text-pretty text-ink-soft",
+							children: "Each left page is checked against the page beside it. A regex reads dates as days, and figures without currency signs or thousands separators."
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "mt-4 min-h-0 flex-1 overflow-auto",
+							children: figureReport.map((pair) => {
+								const clean = pair.right !== null && !pair.datesLeft.length && !pair.datesRight.length && !pair.figuresLeft.length && !pair.figuresRight.length;
+								return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("section", {
+									className: "mt-4 border-t border-line pt-3 first:mt-0 first:border-t-0 first:pt-0",
+									children: [
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h3", {
+											className: "text-base",
+											children: pair.right ? `Pages ${pair.left} and ${pair.right}` : `Page ${pair.left}`
+										}),
+										!pair.right && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "mt-1 text-sm text-ink-soft",
+											children: "No page beside this one."
+										}),
+										clean && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+											className: "mt-1 text-sm text-ink-soft",
+											children: "Figures and dates match."
+										}),
+										/* @__PURE__ */ (0, import_jsx_runtime.jsx)(GapList, {
+											title: `Page ${pair.left} only`,
+											dates: pair.datesLeft,
+											figures: pair.figuresLeft
+										}),
+										pair.right !== null && /* @__PURE__ */ (0, import_jsx_runtime.jsx)(GapList, {
+											title: `Page ${pair.right} only`,
+											dates: pair.datesRight,
+											figures: pair.figuresRight
+										})
+									]
+								}, `${pair.left}-${pair.right ?? "none"}`);
+							})
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+							className: "mt-5 flex justify-end",
+							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: () => setFigureReport(null),
+								className: "h-11 rounded-md bg-brass px-4 text-sm text-paper",
+								children: "Close"
+							})
 						})
 					]
 				})
@@ -3713,6 +4298,19 @@ function Desk() {
 				})
 			})
 		]
+	});
+}
+function GapList({ title, dates, figures }) {
+	if (!dates.length && !figures.length) return null;
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+		className: "mt-2",
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+			className: "text-sm",
+			children: title
+		}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("ul", {
+			className: "mt-1 list-disc pl-5 text-sm text-ink-soft",
+			children: [dates.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: item.extra > 1 ? `Date: ${item.raw} ×${item.extra}` : `Date: ${item.raw}` }, `d-${index}`)), figures.map((item, index) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("li", { children: item.extra > 1 ? `Figure: ${item.raw} ×${item.extra}` : `Figure: ${item.raw}` }, `f-${index}`))]
+		})]
 	});
 }
 function isPdf(file) {
@@ -3764,7 +4362,11 @@ var init_Desk = __esmMin((() => {
 	init_pdf_client();
 	init_sample_pdf();
 	init_session();
+	init_launch_pdf();
 	init_passcode();
+	init_report();
+	init_Usage();
+	init_bilingual_check();
 	TOOLS = [
 		{
 			id: "select",
@@ -3804,10 +4406,5 @@ var init_Desk = __esmMin((() => {
 		}
 	];
 }));
-var SplitComponent;
-__esmMin((() => {
-	init_Desk();
-	SplitComponent = Desk;
-}))();
 //#endregion
-export { SplitComponent as component };
+export { init_Desk as n, Desk as t };

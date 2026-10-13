@@ -1,17 +1,25 @@
-import { n as __exportAll } from "../_runtime.mjs";
+import { r as __exportAll } from "../_runtime.mjs";
 import { t as __esmMin } from "./rolldown-runtime-DkIiUugF.mjs";
-import { A as getScriptPreloadAttrs, B as isDangerousProtocol, D as toCrossJSONStream, E as toCrossJSONAsync, F as _getRenderedMatches, G as isNotFound, I as executeRewriteInput, K as require_react, L as invariant, M as resolveManifestAssetLink, N as resolveManifestCssLink, P as waitForReason, U as isRedirect, V as isPromise, W as rootRouteId, a as isSsrResponse, b as require_jsx_runtime, c as stripSsrResponseBody, i as disposeSsrResponse, j as getStylesheetHref, n as bindSsrResponseToRequest, o as normalizeSsrResponse, p as RouterProvider, r as defineHandlerCallback, s as replaceSsrResponse, t as renderRouterToStream, w as fromJSON } from "../_libs/@tanstack/react-router+[...].mjs";
+import { D as toCrossJSONAsync, F as waitForReason, G as parseRedirect, H as isPromise, I as _getRenderedMatches, J as require_react, K as rootRouteId, L as executeRewriteInput, M as getStylesheetHref, N as resolveManifestAssetLink, O as toCrossJSONStream, P as resolveManifestCssLink, R as invariant, T as fromJSON, V as isDangerousProtocol, W as isRedirect, a as isSsrResponse, c as stripSsrResponseBody, i as disposeSsrResponse, j as getScriptPreloadAttrs, n as bindSsrResponseToRequest, o as normalizeSsrResponse, p as RouterProvider, q as isNotFound, r as defineHandlerCallback, s as replaceSsrResponse, t as renderRouterToStream, x as require_jsx_runtime } from "../_libs/@tanstack/react-router+[...].mjs";
 import { n as createServerHistory } from "../_libs/tanstack__history.mjs";
 import { a as defaultSerovalDeserializerPlugins, i as createRawStreamRPCPlugin, n as attachRouterServerSsrUtils, o as makeSerovalPlugin, r as getNormalizedURL, s as createSerializationAdapter, t as mergeHeaders } from "../_libs/@tanstack/router-core+[...].mjs";
 import { n as getRequestHost, r as toResponse, t as H3Event } from "../_libs/h3-v2+rou3.mjs";
 import { AsyncLocalStorage } from "node:async_hooks";
 //#region node_modules/.nitro/vite/services/ssr/index.js
 var ssr_exports = /* @__PURE__ */ __exportAll({
+	a: () => TSS_SERVER_FUNCTION,
+	c: () => getServerFnById,
 	createServerEntry: () => createServerEntry,
+	d: () => init_request_response,
 	default: () => server_default,
-	n: () => getRequestHost$1,
-	r: () => init_request_response,
-	t: () => init_server
+	i: () => init_createServerFn,
+	l: () => init___23tanstack_start_server_fn_resolver,
+	n: () => init_esm$2,
+	o: () => init_constants,
+	r: () => createServerFn,
+	s: () => init_getServerFnById,
+	t: () => init_server,
+	u: () => getRequestHost$1
 });
 require_react();
 var import_jsx_runtime = require_jsx_runtime();
@@ -127,7 +135,7 @@ var init_constants$1 = __esmMin((() => {
 * the dev styles URL for route-scoped CSS collection.
 */
 async function getStartManifest(matchedRoutes) {
-	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-Bb02lBiN.mjs");
+	const { tsrStartManifest } = await import("../_tanstack-start-manifest_v-SK_GzUGv.mjs");
 	const startManifest = tsrStartManifest();
 	let routes = startManifest.routes;
 	routes[rootRouteId];
@@ -158,13 +166,23 @@ async function getServerFnById(id, access) {
 }
 var manifest;
 var init___23tanstack_start_server_fn_resolver = __esmMin((() => {
-	manifest = {};
+	manifest = {
+		"336e109a772a1a734805de279b3f56df868f0b93a7aa4f30a984c44f21461a80": {
+			functionName: "noteUnlock_createServerFn_handler",
+			importer: () => import("./usage-k-rTeJXd.mjs")
+		},
+		"9f8ea6b9b7c6c5268e4b8e4f3ee2c6cb8076e86cc6778203f688801636a7303e": {
+			functionName: "loadUsage_createServerFn_handler",
+			importer: () => import("./usage-k-rTeJXd.mjs")
+		}
+	};
 }));
 var init_getServerFnById = __esmMin((() => {
 	init___23tanstack_start_server_fn_resolver();
 }));
 var TSS_FORMDATA_CONTEXT;
 var TSS_SERVER_FUNCTION;
+var TSS_SERVER_FUNCTION_FACTORY;
 var X_TSS_SERIALIZED;
 var X_TSS_RAW_RESPONSE;
 var TSS_CONTENT_TYPE_FRAMED;
@@ -174,6 +192,7 @@ var TSS_CONTENT_TYPE_FRAMED_VERSIONED;
 var init_constants = __esmMin((() => {
 	TSS_FORMDATA_CONTEXT = "__TSS_CONTEXT";
 	TSS_SERVER_FUNCTION = Symbol.for("TSS_SERVER_FUNCTION");
+	TSS_SERVER_FUNCTION_FACTORY = Symbol.for("TSS_SERVER_FUNCTION_FACTORY");
 	X_TSS_SERIALIZED = "x-tss-serialized";
 	X_TSS_RAW_RESPONSE = "x-tss-raw";
 	TSS_CONTENT_TYPE_FRAMED = "application/x-tss-framed";
@@ -434,6 +453,75 @@ function createNullProtoObject(source) {
 	return obj;
 }
 var init_safeObjectMerge = __esmMin((() => {}));
+var getStartContextServerOnly;
+var init_getStartContextServerOnly = __esmMin((() => {
+	init_esm$3();
+	getStartContextServerOnly = getStartContext;
+}));
+async function executeMiddleware$1(middlewares, env, opts) {
+	let flattenedMiddlewares = flattenMiddlewares([...getStartOptions()?.functionMiddleware || [], ...middlewares]);
+	if (env === "server") {
+		const startContext = getStartContextServerOnly({ throwIfNotFound: false });
+		if (startContext?.executedRequestMiddlewares) flattenedMiddlewares = flattenedMiddlewares.filter((m) => !startContext.executedRequestMiddlewares.has(m));
+	}
+	const callNextMiddleware = async (ctx) => {
+		const nextMiddleware = flattenedMiddlewares.shift();
+		if (!nextMiddleware) return ctx;
+		try {
+			let validator = "validator" in nextMiddleware.options ? nextMiddleware.options.validator : void 0;
+			if (!validator && "inputValidator" in nextMiddleware.options) validator = nextMiddleware.options.inputValidator;
+			if (validator && env === "server") ctx.data = await execValidator(validator, ctx.data);
+			let middlewareFn = void 0;
+			if (env === "client") {
+				if ("client" in nextMiddleware.options) middlewareFn = nextMiddleware.options.client;
+			} else if ("server" in nextMiddleware.options) middlewareFn = nextMiddleware.options.server;
+			if (middlewareFn) {
+				const userNext = async (userCtx = {}) => {
+					const result = await callNextMiddleware({
+						...ctx,
+						...userCtx,
+						context: safeObjectMerge(ctx.context, userCtx.context),
+						sendContext: safeObjectMerge(ctx.sendContext, userCtx.sendContext),
+						headers: mergeHeaders(ctx.headers, userCtx.headers),
+						_callSiteFetch: ctx._callSiteFetch,
+						fetch: ctx._callSiteFetch ?? userCtx.fetch ?? ctx.fetch,
+						result: userCtx.result !== void 0 ? userCtx.result : userCtx instanceof Response ? userCtx : ctx.result,
+						error: userCtx.error ?? ctx.error
+					});
+					if (result.error) throw result.error;
+					return result;
+				};
+				const result = await middlewareFn({
+					...ctx,
+					next: userNext
+				});
+				if (isRedirect(result)) return {
+					...ctx,
+					error: result
+				};
+				if (result instanceof Response) return {
+					...ctx,
+					result
+				};
+				if (!result) throw new Error("User middleware returned undefined. You must call next() or return a result in your middlewares.");
+				return result;
+			}
+			return callNextMiddleware(ctx);
+		} catch (error) {
+			return {
+				...ctx,
+				error
+			};
+		}
+	};
+	return callNextMiddleware({
+		...opts,
+		headers: opts.headers || {},
+		sendContext: opts.sendContext || {},
+		context: opts.context || createNullProtoObject(),
+		_callSiteFetch: opts.fetch
+	});
+}
 function flattenMiddlewares(middlewares, maxDepth = 100) {
 	const seen = /* @__PURE__ */ new Set();
 	const flattened = [];
@@ -450,7 +538,128 @@ function flattenMiddlewares(middlewares, maxDepth = 100) {
 	recurse(middlewares, 0);
 	return flattened;
 }
-var init_createServerFn = __esmMin((() => {}));
+async function execValidator(validator, input) {
+	if (validator == null) return {};
+	if ("~standard" in validator) {
+		const result = await validator["~standard"].validate(input);
+		if (result.issues) throw new Error(JSON.stringify(result.issues, void 0, 2));
+		return result.value;
+	}
+	if ("parse" in validator) return validator.parse(input);
+	if (typeof validator === "function") return validator(input);
+	throw new Error("Invalid validator type!");
+}
+function serverFnBaseToMiddleware(options) {
+	return {
+		"~types": void 0,
+		options: {
+			inputValidator: options.validator ?? options.inputValidator,
+			client: async ({ next, sendContext, fetch, ...ctx }) => {
+				const payload = {
+					...ctx,
+					context: sendContext,
+					fetch
+				};
+				return next(await options.extractedFn?.(payload));
+			},
+			server: async ({ next, ...ctx }) => {
+				const result = await options.serverFn?.(ctx);
+				return next({
+					...ctx,
+					result
+				});
+			}
+		}
+	};
+}
+var createServerFn;
+var init_createServerFn = __esmMin((() => {
+	init_constants();
+	init_getStartOptions();
+	init_getStartContextServerOnly();
+	init_safeObjectMerge();
+	createServerFn = (options, __opts) => {
+		const resolvedOptions = __opts || options || {};
+		if (typeof resolvedOptions.method === "undefined") resolvedOptions.method = "GET";
+		const setValidator = (validator) => {
+			return createServerFn(void 0, {
+				...resolvedOptions,
+				validator,
+				inputValidator: validator
+			});
+		};
+		const res = {
+			options: resolvedOptions,
+			middleware: (middleware) => {
+				const newMiddleware = [...resolvedOptions.middleware || []];
+				middleware.forEach((item) => {
+					if (TSS_SERVER_FUNCTION_FACTORY in item) {
+						if (item.options.middleware) newMiddleware.push(...item.options.middleware);
+					} else newMiddleware.push(item);
+				});
+				const res = createServerFn(void 0, {
+					...resolvedOptions,
+					middleware: newMiddleware
+				});
+				res[TSS_SERVER_FUNCTION_FACTORY] = true;
+				return res;
+			},
+			validator: setValidator,
+			inputValidator: setValidator,
+			handler: (...args) => {
+				const [extractedFn, serverFn] = args;
+				const newOptions = {
+					...resolvedOptions,
+					extractedFn,
+					serverFn
+				};
+				const resolvedMiddleware = [...newOptions.middleware || [], serverFnBaseToMiddleware(newOptions)];
+				extractedFn.method = resolvedOptions.method;
+				return Object.assign(async (opts) => {
+					const result = await executeMiddleware$1(resolvedMiddleware, "client", {
+						...extractedFn,
+						...newOptions,
+						data: opts?.data,
+						headers: opts?.headers,
+						signal: opts?.signal,
+						fetch: opts?.fetch,
+						context: createNullProtoObject()
+					});
+					const redirect = parseRedirect(result.error);
+					if (redirect) throw redirect;
+					if (result.error) throw result.error;
+					return result.result;
+				}, {
+					...extractedFn,
+					method: resolvedOptions.method,
+					__executeServer: async (opts) => {
+						const startContext = getStartContextServerOnly();
+						const serverContextAfterGlobalMiddlewares = startContext.contextAfterGlobalMiddlewares;
+						return await executeMiddleware$1(resolvedMiddleware, "server", {
+							...extractedFn,
+							data: opts.data,
+							method: opts.method ?? resolvedOptions.method,
+							serverFnMeta: extractedFn.serverFnMeta,
+							context: safeObjectMerge(opts.context, serverContextAfterGlobalMiddlewares),
+							request: startContext.request
+						}).then((d) => ({
+							result: d.result,
+							error: d.error,
+							context: d.sendContext
+						}));
+					}
+				});
+			}
+		};
+		const fun = (options) => {
+			return createServerFn(void 0, {
+				...resolvedOptions,
+				...options
+			});
+		};
+		return Object.assign(fun, res);
+	};
+}));
 var createMiddleware;
 var init_createMiddleware = __esmMin((() => {
 	createMiddleware = (options, __opts) => {
@@ -1434,7 +1643,7 @@ function getStartResponseHeaders(opts) {
 }
 async function loadEntries() {
 	const [routerEntry, startEntry, pluginAdapters] = await Promise.all([
-		import("./router-Ccpu2C_D.mjs").then((n) => n.t),
+		import("./router-BFIyw31a.mjs").then((n) => n.t),
 		import("./start-DZ_8zysu.mjs"),
 		import("./empty-plugin-adapters-ztSvDY-n.mjs")
 	]);
@@ -1942,4 +2151,4 @@ function createServerEntry(entry) {
 }
 var server_default = createServerEntry({ fetch });
 //#endregion
-export { createServerEntry, server_default as default, ssr_exports as i, getRequestHost$1 as n, init_request_response as r, init_server as t };
+export { TSS_SERVER_FUNCTION as a, getServerFnById as c, createServerEntry, init_request_response as d, server_default as default, ssr_exports as f, init_createServerFn as i, init___23tanstack_start_server_fn_resolver as l, init_esm$2 as n, init_constants as o, createServerFn as r, init_getServerFnById as s, init_server as t, getRequestHost$1 as u };

@@ -177,3 +177,17 @@ export async function searchPdf(pdf: PdfDoc, query: string): Promise<SearchHit[]
   }
   return hits;
 }
+
+export async function pagePlainText(pdf: PdfDoc, pageNumber: number): Promise<string> {
+  const page = await pdf.getPage(pageNumber);
+  const content = await page.getTextContent();
+  let text = "";
+  for (const item of content.items) {
+    if (!("str" in item)) continue;
+    const run = item as TextItem;
+    if (text && run.str && !/\s$/.test(text) && !/^\s/.test(run.str)) text += " ";
+    text += run.str;
+    if (run.hasEOL) text += "\n";
+  }
+  return text.normalize("NFKC");
+}

@@ -1,0 +1,1 @@
+import{t as e}from"./Desk-BIv6Sa-V.js";import{i as t}from"./index-DkV9LXTm.js";var n=t(),r=function(){return(0,n.jsx)(e,{studio:!0})};export{r as component};

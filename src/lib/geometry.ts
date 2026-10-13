@@ -53,6 +53,15 @@ function mergeBoxes(boxes: Box[]): Box[] {
   return merged;
 }
 
+function contentOrigin(pageEl: HTMLElement) {
+  const box = pageEl.getBoundingClientRect();
+  const style = getComputedStyle(pageEl);
+  return {
+    x: box.left + (parseFloat(style.borderLeftWidth) || 0),
+    y: box.top + (parseFloat(style.borderTopWidth) || 0),
+  };
+}
+
 export function selectionOnPage(
   pageEl: HTMLElement,
   viewport: ViewportLike,
@@ -65,13 +74,13 @@ export function selectionOnPage(
   if (!element || !pageEl.contains(element)) return null;
   const quote = range.toString().replace(/\s+/g, " ").trim();
   if (!quote) return null;
-  const pageBox = pageEl.getBoundingClientRect();
+  const pageBox = contentOrigin(pageEl);
   const boxes: Box[] = [];
   for (const rect of range.getClientRects()) {
     if (rect.width < 1 || rect.height < 1) continue;
     boxes.push({
-      x: rect.left - pageBox.left,
-      y: rect.top - pageBox.top,
+      x: rect.left - pageBox.x,
+      y: rect.top - pageBox.y,
       w: rect.width,
       h: rect.height,
     });
@@ -97,8 +106,8 @@ export function clientToPdf(
   clientX: number,
   clientY: number,
 ): Point {
-  const box = pageEl.getBoundingClientRect();
-  const [x, y] = viewport.convertToPdfPoint(clientX - box.left, clientY - box.top);
+  const box = contentOrigin(pageEl);
+  const [x, y] = viewport.convertToPdfPoint(clientX - box.x, clientY - box.y);
   return { x, y };
 }
 

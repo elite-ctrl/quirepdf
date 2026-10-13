@@ -1,11 +1,11 @@
-import { i as __toESM, n as __exportAll } from "../_runtime.mjs";
+import { o as __toESM, r as __exportAll } from "../_runtime.mjs";
 import { n as __exportAll$1, r as __toCommonJS, t as __esmMin } from "./rolldown-runtime-DkIiUugF.mjs";
-import { K as require_react, _ as createFileRoute, b as require_jsx_runtime, d as Scripts, f as HeadContent, g as lazyRouteComponent, h as Outlet, m as createRouter, v as createRootRoute, y as useRouter } from "../_libs/@tanstack/react-router+[...].mjs";
-import { n as getRequestHost$1, t as init_server } from "./ssr.mjs";
+import { J as require_react, _ as createFileRoute, b as useRouter, d as Scripts, f as HeadContent, g as lazyRouteComponent, h as Outlet, m as createRouter, v as createRootRoute, x as require_jsx_runtime } from "../_libs/@tanstack/react-router+[...].mjs";
+import { t as init_server, u as getRequestHost$1 } from "./ssr.mjs";
 import { a as TriangleAlert } from "../_libs/lucide-react.mjs";
 import { a as union, i as string, n as number, r as object, t as literal } from "../_libs/zod.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/router-Ccpu2C_D.js
-var router_Ccpu2C_D_exports = /* @__PURE__ */ __exportAll({ getRouter: () => getRouter });
+//#region node_modules/.nitro/vite/services/ssr/assets/router-BFIyw31a.js
+var router_BFIyw31a_exports = /* @__PURE__ */ __exportAll({ getRouter: () => getRouter });
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 function errorMessage(error) {
@@ -356,7 +356,7 @@ var init_styles$1 = __esmMin((() => {}));
 var styles_default;
 var init_styles = __esmMin((() => {
 	init_styles$1();
-	styles_default = "/assets/styles-C4xi79NP.css";
+	styles_default = "/assets/styles-BwbvNtWL.css";
 }));
 var share_host_server_exports = /* @__PURE__ */ __exportAll$1({ requestHost: () => requestHost });
 function requestHost() {
@@ -380,7 +380,7 @@ function shareHost() {
 }
 var APP_NAME;
 var readRawHost;
-var Route$1;
+var Route$2;
 var init___root = __esmMin((() => {
 	init_provider();
 	init_preview_host_bridge();
@@ -390,7 +390,7 @@ var init___root = __esmMin((() => {
 		const { requestHost } = (init_share_host_server(), __toCommonJS(share_host_server_exports));
 		return requestHost();
 	};
-	Route$1 = createRootRoute({
+	Route$2 = createRootRoute({
 		head: () => {
 			const host = shareHost();
 			const xBanner = host ? `https://${host}/x-banner.jpg` : "";
@@ -448,23 +448,37 @@ var init___root = __esmMin((() => {
 		})
 	});
 }));
+var $$splitComponentImporter$1;
+var Route$1;
+var init_routes = __esmMin((() => {
+	$$splitComponentImporter$1 = () => import("./routes-Blj-0LR7.mjs");
+	Route$1 = createFileRoute("/")({ component: lazyRouteComponent($$splitComponentImporter$1, "component") });
+}));
 var $$splitComponentImporter;
 var Route;
-var init_routes = __esmMin((() => {
-	$$splitComponentImporter = () => import("./routes-Bk1cNgFP.mjs");
-	Route = createFileRoute("/")({ component: lazyRouteComponent($$splitComponentImporter, "component") });
+var init_studio = __esmMin((() => {
+	$$splitComponentImporter = () => import("./studio-BvlA1yTN.mjs");
+	Route = createFileRoute("/studio")({ component: lazyRouteComponent($$splitComponentImporter, "component") });
 }));
 var rootRouteChildren;
 var routeTree;
 var init_routeTree_gen = __esmMin((() => {
 	init___root();
 	init_routes();
-	rootRouteChildren = { IndexRoute: Route.update({
-		id: "/",
-		path: "/",
-		getParentRoute: () => Route$1
-	}) };
-	routeTree = Route$1._addFileChildren(rootRouteChildren)._addFileTypes();
+	init_studio();
+	rootRouteChildren = {
+		IndexRoute: Route$1.update({
+			id: "/",
+			path: "/",
+			getParentRoute: () => Route$2
+		}),
+		StudioRoute: Route.update({
+			id: "/studio",
+			path: "/studio",
+			getParentRoute: () => Route$2
+		})
+	};
+	routeTree = Route$2._addFileChildren(rootRouteChildren)._addFileTypes();
 }));
 function getRouter() {
 	return createRouter({
@@ -479,4 +493,4 @@ __esmMin((() => {
 	init_routeTree_gen();
 }))();
 //#endregion
-export { getRouter, router_Ccpu2C_D_exports as t };
+export { getRouter, router_BFIyw31a_exports as t };
