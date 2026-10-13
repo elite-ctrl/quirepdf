@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { clientToPdf, edgeToward, quadToView, type ViewportLike } from "@/lib/geometry";
-import { labelName, readName, type Mark, type Point, type Tool } from "@/lib/marks";
+import { labelName, type Mark, type Point, type Tool } from "@/lib/marks";
 import { loadPdfjs, type SearchHit } from "@/lib/pdf-client";
 
 type PdfDoc = import("pdfjs-dist").PDFDocumentProxy;
@@ -428,17 +428,6 @@ export function PdfPage({
                                 stroke={color}
                                 strokeWidth={Math.max(1.4, view.height * 0.07)}
                               />
-                            )}
-                            {active && index === 0 && (
-                              <text
-                                x={view.left}
-                                y={Math.max(12, view.top - 4)}
-                                fill="var(--color-ink)"
-                                fontSize={12}
-                                fontFamily="var(--font-sans)"
-                              >
-                                {readName(mark.pass)}
-                              </text>
                             )}
                           </g>
                         );

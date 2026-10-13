@@ -6,17 +6,14 @@ import {
   LABELS,
   kindName,
   labelName,
-  readName,
   sortMarks,
   type InkId,
   type Kind,
   type LabelId,
   type Mark,
-  type Pass,
 } from "@/lib/marks";
 
 type KindFilter = "all" | Kind;
-type PassFilter = "all" | Pass;
 
 type Props = {
   marks: Mark[];
@@ -43,12 +40,10 @@ export function Rail({
   onDelete,
   onClear,
 }: Props) {
-  const [passFilter, setPassFilter] = useState<PassFilter>("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [armed, setArmed] = useState(false);
   const sorted = sortMarks(marks);
   const filtered = sorted.filter((mark) => {
-    if (passFilter !== "all" && mark.pass !== passFilter) return false;
     if (kindFilter !== "all" && mark.kind !== kindFilter) return false;
     return true;
   });
@@ -71,21 +66,16 @@ export function Rail({
           type="button"
           onClick={onClose}
           aria-label="Close marks"
-          className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised"
+          className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm hover:bg-raised"
         >
           <X size={18} strokeWidth={1.75} />
+          Close
         </button>
       </div>
 
       <div className="flex shrink-0 gap-2 overflow-x-auto border-b border-line-dark px-3 py-2">
-        <FilterButton pressed={passFilter === "all" && kindFilter === "all"} onClick={() => { setPassFilter("all"); setKindFilter("all"); }}>
+        <FilterButton pressed={kindFilter === "all"} onClick={() => setKindFilter("all")}>
           All
-        </FilterButton>
-        <FilterButton pressed={passFilter === 1} onClick={() => setPassFilter(passFilter === 1 ? "all" : 1)}>
-          First read
-        </FilterButton>
-        <FilterButton pressed={passFilter === 2} onClick={() => setPassFilter(passFilter === 2 ? "all" : 2)}>
-          Second read
         </FilterButton>
         {KINDS.map((kind) => (
           <FilterButton
@@ -121,20 +111,6 @@ export function Rail({
             className="mt-1 w-full resize-none rounded-md border border-line bg-paper px-3 py-2 text-sm text-ink outline-none focus:border-brass"
           />
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-sm text-muted">Read</span>
-            {([1, 2] as const).map((pass) => (
-              <button
-                key={pass}
-                type="button"
-                aria-pressed={active.pass === pass}
-                onClick={() => onPatch(active.id, { pass })}
-                className={`h-11 rounded-md px-3 text-sm ${active.pass === pass ? (pass === 1 ? "bg-brass text-paper" : "bg-steel text-paper") : "bg-raised text-paper"}`}
-              >
-                {readName(pass)}
-              </button>
-            ))}
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted">Colour</span>
             {INKS.map((ink) => (
               <InkButton
@@ -207,7 +183,7 @@ export function Rail({
             >
               <span className="flex items-baseline justify-between gap-3 text-sm text-muted">
                 <span>
-                  {readName(mark.pass)} · {kindName(mark.kind)} · {labelName(mark.label)}
+                  {kindName(mark.kind)} · {labelName(mark.label)}
                 </span>
                 <span className="tabular-nums">p. {mark.page}</span>
               </span>
@@ -281,9 +257,10 @@ function InkButton({
       title={name}
       aria-pressed={pressed}
       onClick={onClick}
-      className={`inline-flex h-11 w-11 items-center justify-center ${pressed ? "bg-stamp" : "bg-paper"}`}
+      className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${pressed ? "bg-stamp" : "bg-paper"}`}
     >
       <span className="block h-4 w-4 rounded-full" style={{ background: `var(--color-${ink})` }} />
+      {name}
     </button>
   );
 }

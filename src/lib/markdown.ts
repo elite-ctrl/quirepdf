@@ -1,4 +1,4 @@
-import { kindName, labelName, readName, sortMarks, type Mark } from "@/lib/marks";
+import { kindName, labelName, sortMarks, type Mark } from "@/lib/marks";
 
 export function marksToMarkdown(fileName: string, marks: Mark[]): string {
   const sorted = sortMarks(marks);
@@ -16,7 +16,7 @@ export function marksToMarkdown(fileName: string, marks: Mark[]): string {
     return lines.join("\n");
   }
   for (const mark of sorted) {
-    lines.push(`## Page ${mark.page} · ${kindName(mark.kind)} · ${readName(mark.pass)} · ${labelName(mark.label)}`);
+    lines.push(`## Page ${mark.page} · ${kindName(mark.kind)} · ${labelName(mark.label)}`);
     lines.push("");
     if (mark.quote.trim()) {
       lines.push(`> ${mark.quote.trim().replaceAll("\n", "\n> ")}`);

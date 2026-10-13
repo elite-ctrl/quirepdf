@@ -1,4 +1,4 @@
-import type { InkId, Mark, Pass, Quad } from "@/lib/marks";
+import type { InkId, Mark, Quad } from "@/lib/marks";
 
 export type PlacedWord = { text: string; quad: Quad };
 
@@ -145,12 +145,12 @@ function changeId(): string {
   return `change-${crypto.randomUUID()}`;
 }
 
-function highlightMark(page: number, pass: Pass, ink: InkId, note: string, words: PlacedWord[]): Mark {
+function highlightMark(page: number, ink: InkId, note: string, words: PlacedWord[]): Mark {
   return {
     id: changeId(),
     page,
     kind: "highlight",
-    pass,
+    pass: 1,
     ink,
     label: "note",
     note,
@@ -160,14 +160,14 @@ function highlightMark(page: number, pass: Pass, ink: InkId, note: string, words
   };
 }
 
-function deletionMark(page: number, pass: Pass, words: PlacedWord[], anchor: Quad | null, stack: number): Mark {
+function deletionMark(page: number, words: PlacedWord[], anchor: Quad | null, stack: number): Mark {
   const text = joined(words, 280);
   const base = anchor ?? { x: 72, y: 680, w: 12, h: 12 };
   return {
     id: changeId(),
     page,
     kind: "callout",
-    pass,
+    pass: 1,
     ink: "crimson",
     label: "note",
     note: `Deleted: ${text}`,
@@ -179,16 +179,16 @@ function deletionMark(page: number, pass: Pass, words: PlacedWord[], anchor: Qua
 }
 
 /** Marks for one page. `before` is the earlier copy. `after` is this file. */
-export function marksForPage(before: PlacedWord[], after: PlacedWord[], page: number, pass: Pass): Mark[] {
+export function marksForPage(before: PlacedWord[], after: PlacedWord[], page: number): Mark[] {
   const ops = diffTokens(
     before.map((word) => word.text),
     after.map((word) => word.text),
   );
   if (!ops) {
     if (!before.length && !after.length) return [];
-    if (!before.length) return [highlightMark(page, pass, "steel", "Added.", after)];
-    if (!after.length) return [deletionMark(page, pass, before, null, 0)];
-    return [highlightMark(page, pass, "brass", `Was: ${joined(before, 500)}`, after)];
+    if (!before.length) return [highlightMark(page, "steel", "Added.", after)];
+    if (!after.length) return [deletionMark(page, before, null, 0)];
+    return [highlightMark(page, "brass", `Was: ${joined(before, 500)}`, after)];
   }
   const marks: Mark[] = [];
   let removed: PlacedWord[] = [];
@@ -197,11 +197,11 @@ export function marksForPage(before: PlacedWord[], after: PlacedWord[], page: nu
   const flush = (anchor: Quad | null) => {
     if (!removed.length && !added.length) return;
     if (removed.length && added.length) {
-      marks.push(highlightMark(page, pass, "brass", `Was: ${joined(removed, 500)}`, added));
+      marks.push(highlightMark(page, "brass", `Was: ${joined(removed, 500)}`, added));
     } else if (added.length) {
-      marks.push(highlightMark(page, pass, "steel", "Added.", added));
+      marks.push(highlightMark(page, "steel", "Added.", added));
     } else {
-      marks.push(deletionMark(page, pass, removed, anchor, stack));
+      marks.push(deletionMark(page, removed, anchor, stack));
       stack += 1;
     }
     removed = [];

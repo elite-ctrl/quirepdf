@@ -3,7 +3,7 @@ import { t as __esmMin } from "./rolldown-runtime-DkIiUugF.mjs";
 import { K as require_react, b as require_jsx_runtime } from "../_libs/@tanstack/react-router+[...].mjs";
 import { S as ArrowUpRight, _ as Files, b as Columns2, c as Search, d as PanelRight, f as MousePointer2, g as GitCompare, h as Highlighter, i as Underline, l as Redo2, m as MessageSquare, n as Upload, o as Trash2, p as Minus, r as Undo2, s as Strikethrough, t as X, u as Plus, v as FileText, x as BookOpen, y as FileDown } from "../_libs/lucide-react.mjs";
 import { a as PDFHexString, i as PDFString, n as StandardFonts, o as PDFRef, r as rgb, s as PDFName, t as PDFDocument } from "../_libs/pdf-lib.mjs";
-//#region node_modules/.nitro/vite/services/ssr/assets/routes-D-YQG9Xa.js
+//#region node_modules/.nitro/vite/services/ssr/assets/routes-Bk1cNgFP.js
 var import_react = /* @__PURE__ */ __toESM(require_react());
 var import_jsx_runtime = require_jsx_runtime();
 function quadsFromPoints(points) {
@@ -137,9 +137,6 @@ function quadToView(quad, viewport) {
 	};
 }
 var init_geometry = __esmMin((() => {}));
-function readName(pass) {
-	return pass === 1 ? "First read" : "Second read";
-}
 function kindName(kind) {
 	return KINDS.find((item) => item.id === kind)?.name ?? "Highlight";
 }
@@ -147,13 +144,13 @@ function labelName(label) {
 	return LABELS.find((item) => item.id === label)?.name ?? "Note";
 }
 function formatContents(mark) {
-	const head = `[${readName(mark.pass)} · ${labelName(mark.label)}]`;
+	const head = `[${labelName(mark.label)}]`;
 	const note = mark.note.trim();
 	return note ? `${head}\n${note}` : head;
 }
 function parseNote(contents) {
 	const match = contents.match(HEADER);
-	if (!match) return {
+	if (!match || !match[2]) return {
 		pass: 1,
 		label: "note",
 		note: contents.trim()
@@ -329,7 +326,7 @@ var init_marks = __esmMin((() => {
 			47 / 255
 		]
 	};
-	HEADER = /^\[(First read|Second read|P[12]) · (Query|Style|Term|Number|Cross-ref|Note)\]\n?/;
+	HEADER = /^\[(?:(First read|Second read|P[12]) · )?(Query|Style|Term|Number|Cross-ref|Note)\]\n?/;
 }));
 function loadPdfjs() {
 	if (!loading) loading = (async () => {
@@ -945,14 +942,6 @@ function PdfPage({ pdf, pageNumber, scale, marks, hits, activeHit, activeId, too
 											y2: view.top + view.height / 2,
 											stroke: color,
 											strokeWidth: Math.max(1.4, view.height * .07)
-										}),
-										active && index === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("text", {
-											x: view.left,
-											y: Math.max(12, view.top - 4),
-											fill: "var(--color-ink)",
-											fontSize: 12,
-											fontFamily: "var(--font-sans)",
-											children: readName(mark.pass)
 										})
 									] }, index);
 								})
@@ -1077,11 +1066,9 @@ var init_PdfPage = __esmMin((() => {
 	init_pdf_client();
 }));
 function Rail({ marks, activeId, noteRef, onClose, onPick, onPatch, onNote, onNoteBlur, onDelete, onClear }) {
-	const [passFilter, setPassFilter] = (0, import_react.useState)("all");
 	const [kindFilter, setKindFilter] = (0, import_react.useState)("all");
 	const [armed, setArmed] = (0, import_react.useState)(false);
 	const filtered = sortMarks(marks).filter((mark) => {
-		if (passFilter !== "all" && mark.pass !== passFilter) return false;
 		if (kindFilter !== "all" && mark.kind !== kindFilter) return false;
 		return true;
 	});
@@ -1100,44 +1087,28 @@ function Rail({ marks, activeId, noteRef, onClose, onPick, onPatch, onNote, onNo
 				}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 					className: "mt-1 text-sm text-muted tabular-nums",
 					children: filtered.length === marks.length ? `${marks.length}` : `${filtered.length} of ${marks.length}`
-				})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+				})] }), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 					type: "button",
 					onClick: onClose,
 					"aria-label": "Close marks",
-					className: "inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised",
-					children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, {
+					className: "inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm hover:bg-raised",
+					children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(X, {
 						size: 18,
 						strokeWidth: 1.75
-					})
+					}), "Close"]
 				})]
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "flex shrink-0 gap-2 overflow-x-auto border-b border-line-dark px-3 py-2",
-				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterButton, {
-						pressed: passFilter === "all" && kindFilter === "all",
-						onClick: () => {
-							setPassFilter("all");
-							setKindFilter("all");
-						},
-						children: "All"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterButton, {
-						pressed: passFilter === 1,
-						onClick: () => setPassFilter(passFilter === 1 ? "all" : 1),
-						children: "First read"
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterButton, {
-						pressed: passFilter === 2,
-						onClick: () => setPassFilter(passFilter === 2 ? "all" : 2),
-						children: "Second read"
-					}),
-					KINDS.map((kind) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterButton, {
-						pressed: kindFilter === kind.id,
-						onClick: () => setKindFilter(kindFilter === kind.id ? "all" : kind.id),
-						children: kind.name
-					}, kind.id))
-				]
+				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterButton, {
+					pressed: kindFilter === "all",
+					onClick: () => setKindFilter("all"),
+					children: "All"
+				}), KINDS.map((kind) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)(FilterButton, {
+					pressed: kindFilter === kind.id,
+					onClick: () => setKindFilter(kindFilter === kind.id ? "all" : kind.id),
+					children: kind.name
+				}, kind.id))]
 			}),
 			active && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 				className: "shrink-0 border-b border-line-dark px-4 py-3",
@@ -1177,19 +1148,6 @@ function Rail({ marks, activeId, noteRef, onClose, onPick, onPatch, onNote, onNo
 					}),
 					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
 						className: "mt-3 flex flex-wrap items-center gap-2",
-						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-							className: "text-sm text-muted",
-							children: "Read"
-						}), [1, 2].map((pass) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							"aria-pressed": active.pass === pass,
-							onClick: () => onPatch(active.id, { pass }),
-							className: `h-11 rounded-md px-3 text-sm ${active.pass === pass ? pass === 1 ? "bg-brass text-paper" : "bg-steel text-paper" : "bg-raised text-paper"}`,
-							children: readName(pass)
-						}, pass))]
-					}),
-					/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-						className: "mt-2 flex flex-wrap items-center gap-2",
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 							className: "text-sm text-muted",
 							children: "Colour"
@@ -1257,8 +1215,6 @@ function Rail({ marks, activeId, noteRef, onClose, onPick, onPatch, onNote, onNo
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 								className: "flex items-baseline justify-between gap-3 text-sm text-muted",
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", { children: [
-									readName(mark.pass),
-									" · ",
 									kindName(mark.kind),
 									" · ",
 									labelName(mark.label)
@@ -1308,17 +1264,17 @@ function FilterButton({ pressed, onClick, children }) {
 	});
 }
 function InkButton({ ink, name, pressed, onClick }) {
-	return /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+	return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 		type: "button",
 		"aria-label": name,
 		title: name,
 		"aria-pressed": pressed,
 		onClick,
-		className: `inline-flex h-11 w-11 items-center justify-center ${pressed ? "bg-stamp" : "bg-paper"}`,
-		children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+		className: `inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${pressed ? "bg-stamp" : "bg-paper"}`,
+		children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 			className: "block h-4 w-4 rounded-full",
 			style: { background: `var(--color-${ink})` }
-		})
+		}), name]
 	});
 }
 var init_Rail = __esmMin((() => {
@@ -1343,7 +1299,7 @@ function marksToMarkdown(fileName, marks) {
 		return lines.join("\n");
 	}
 	for (const mark of sorted) {
-		lines.push(`## Page ${mark.page} · ${kindName(mark.kind)} · ${readName(mark.pass)} · ${labelName(mark.label)}`);
+		lines.push(`## Page ${mark.page} · ${kindName(mark.kind)} · ${labelName(mark.label)}`);
 		lines.push("");
 		if (mark.quote.trim()) {
 			lines.push(`> ${mark.quote.trim().replaceAll("\n", "\n> ")}`);
@@ -1541,12 +1497,12 @@ function mergeLineQuads(quads) {
 function changeId() {
 	return `change-${crypto.randomUUID()}`;
 }
-function highlightMark(page, pass, ink, note, words) {
+function highlightMark(page, ink, note, words) {
 	return {
 		id: changeId(),
 		page,
 		kind: "highlight",
-		pass,
+		pass: 1,
 		ink,
 		label: "note",
 		note,
@@ -1555,7 +1511,7 @@ function highlightMark(page, pass, ink, note, words) {
 		createdAt: Date.now()
 	};
 }
-function deletionMark(page, pass, words, anchor, stack) {
+function deletionMark(page, words, anchor, stack) {
 	const text = joined(words, 280);
 	const base = anchor ?? {
 		x: 72,
@@ -1567,7 +1523,7 @@ function deletionMark(page, pass, words, anchor, stack) {
 		id: changeId(),
 		page,
 		kind: "callout",
-		pass,
+		pass: 1,
 		ink: "crimson",
 		label: "note",
 		note: `Deleted: ${text}`,
@@ -1586,13 +1542,13 @@ function deletionMark(page, pass, words, anchor, stack) {
 	};
 }
 /** Marks for one page. `before` is the earlier copy. `after` is this file. */
-function marksForPage(before, after, page, pass) {
+function marksForPage(before, after, page) {
 	const ops = diffTokens(before.map((word) => word.text), after.map((word) => word.text));
 	if (!ops) {
 		if (!before.length && !after.length) return [];
-		if (!before.length) return [highlightMark(page, pass, "steel", "Added.", after)];
-		if (!after.length) return [deletionMark(page, pass, before, null, 0)];
-		return [highlightMark(page, pass, "brass", `Was: ${joined(before, 500)}`, after)];
+		if (!before.length) return [highlightMark(page, "steel", "Added.", after)];
+		if (!after.length) return [deletionMark(page, before, null, 0)];
+		return [highlightMark(page, "brass", `Was: ${joined(before, 500)}`, after)];
 	}
 	const marks = [];
 	let removed = [];
@@ -1600,10 +1556,10 @@ function marksForPage(before, after, page, pass) {
 	let stack = 0;
 	const flush = (anchor) => {
 		if (!removed.length && !added.length) return;
-		if (removed.length && added.length) marks.push(highlightMark(page, pass, "brass", `Was: ${joined(removed, 500)}`, added));
-		else if (added.length) marks.push(highlightMark(page, pass, "steel", "Added.", added));
+		if (removed.length && added.length) marks.push(highlightMark(page, "brass", `Was: ${joined(removed, 500)}`, added));
+		else if (added.length) marks.push(highlightMark(page, "steel", "Added.", added));
 		else {
-			marks.push(deletionMark(page, pass, removed, anchor, stack));
+			marks.push(deletionMark(page, removed, anchor, stack));
 			stack += 1;
 		}
 		removed = [];
@@ -1651,20 +1607,20 @@ async function pageWords(pdf, pageNumber) {
 * This file is the later copy. Compare is the earlier copy.
 * Inserted and replaced text is marked on the later copy. Deleted text becomes a callout there.
 */
-async function compareDocuments(earlier, later, pass) {
+async function compareDocuments(earlier, later) {
 	const shared = Math.min(earlier.numPages, later.numPages);
 	const marks = [];
 	for (let page = 1; page <= shared; page += 1) {
 		const before = await pageWords(earlier, page);
 		const after = await pageWords(later, page);
-		marks.push(...marksForPage(before, after, page, pass));
+		marks.push(...marksForPage(before, after, page));
 		if (marks.length >= 400) return capChanges(marks);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 	}
 	for (let page = shared + 1; page <= later.numPages; page += 1) {
 		const after = await pageWords(later, page);
 		if (!after.length) continue;
-		marks.push(...marksForPage([], after, page, pass));
+		marks.push(...marksForPage([], after, page));
 		if (marks.length >= 400) return capChanges(marks);
 	}
 	if (earlier.numPages > later.numPages && later.numPages > 0) {
@@ -1675,7 +1631,7 @@ async function compareDocuments(earlier, later, pass) {
 		}
 		if (removed.length) {
 			const anchor = (await pageWords(later, later.numPages)).at(-1)?.quad ?? null;
-			const mark = marksForPage(removed, [], later.numPages, pass)[0];
+			const mark = marksForPage(removed, [], later.numPages)[0];
 			if (mark?.kind === "callout") marks.push({
 				...mark,
 				...anchor ? {
@@ -1755,7 +1711,7 @@ function common(doc, page, mark, rect, color) {
 		F: 4,
 		Contents: PDFHexString.fromText(formatContents(mark)),
 		T: PDFHexString.fromText("Quire"),
-		Subj: PDFHexString.fromText(`${readName(mark.pass)} · ${labelName(mark.label)}`),
+		Subj: PDFHexString.fromText(labelName(mark.label)),
 		NM: PDFHexString.fromText(`quire-${mark.id}`),
 		M: PDFString.of(pdfDate(Date.now())),
 		CreationDate: PDFString.of(pdfDate(mark.createdAt)),
@@ -1914,7 +1870,7 @@ function makeAnnot(doc, page, mark) {
 		],
 		Contents: PDFHexString.fromText(formatContents(mark)),
 		T: PDFHexString.fromText("Quire"),
-		Subj: PDFHexString.fromText(`${readName(mark.pass)} · ${labelName(mark.label)}`),
+		Subj: PDFHexString.fromText(labelName(mark.label)),
 		NM: PDFHexString.fromText(`quire-${mark.id}`),
 		M: PDFString.of(pdfDate(Date.now())),
 		CreationDate: PDFString.of(pdfDate(mark.createdAt)),
@@ -2218,6 +2174,32 @@ var init_session = __esmMin((() => {
 	DB_NAME = "quire-desk";
 	STORE = "sessions";
 }));
+function unlockStored() {
+	try {
+		return localStorage.getItem(STORAGE_KEY) === PASS_HASH;
+	} catch {
+		return false;
+	}
+}
+async function digest(input) {
+	const bytes = new TextEncoder().encode(input.trim().toLowerCase());
+	const hash = await crypto.subtle.digest("SHA-256", bytes);
+	return [...new Uint8Array(hash)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+async function tryPasscode(input) {
+	if (!input.trim()) return false;
+	if (await digest(input) !== PASS_HASH) return false;
+	try {
+		localStorage.setItem(STORAGE_KEY, PASS_HASH);
+	} catch {}
+	return true;
+}
+var PASS_HASH;
+var STORAGE_KEY;
+var init_passcode = __esmMin((() => {
+	PASS_HASH = "caf206607793365b982e1cf1c33b65da6cbab2d1fb61a25b86a2d61c76d1be4c";
+	STORAGE_KEY = "quire-unlock";
+}));
 function pageSides(count, mode) {
 	const left = [];
 	const right = [];
@@ -2261,7 +2243,6 @@ function Desk() {
 	const [mateBusy, setMateBusy] = (0, import_react.useState)(false);
 	const [matePage, setMatePage] = (0, import_react.useState)(1);
 	const [tool, setTool] = (0, import_react.useState)("select");
-	const [pass, setPass] = (0, import_react.useState)(1);
 	const [ink, setInk] = (0, import_react.useState)("brass");
 	const [label, setLabel] = (0, import_react.useState)("query");
 	const [marks, setMarks] = (0, import_react.useState)([]);
@@ -2283,6 +2264,10 @@ function Desk() {
 	const [dragOver, setDragOver] = (0, import_react.useState)(false);
 	const [historyTick, setHistoryTick] = (0, import_react.useState)(0);
 	const [staySelection, setStaySelection] = (0, import_react.useState)(false);
+	const [paid, setPaid] = (0, import_react.useState)(false);
+	const [gate, setGate] = (0, import_react.useState)(null);
+	const [passInput, setPassInput] = (0, import_react.useState)("");
+	const [passError, setPassError] = (0, import_react.useState)("");
 	const singleScrollRef = (0, import_react.useRef)(null);
 	const leftScrollRef = (0, import_react.useRef)(null);
 	const rightScrollRef = (0, import_react.useRef)(null);
@@ -2297,7 +2282,6 @@ function Desk() {
 	const pdfRef = (0, import_react.useRef)(null);
 	const draftRef = (0, import_react.useRef)({
 		tool,
-		pass,
 		ink,
 		label
 	});
@@ -2313,13 +2297,13 @@ function Desk() {
 	const scaleRef = (0, import_react.useRef)(scale);
 	const earlierNameRef = (0, import_react.useRef)(null);
 	const stayRef = (0, import_react.useRef)(false);
+	const paidRef = (0, import_react.useRef)(false);
 	const applyRef = (0, import_react.useRef)(() => false);
 	marksRef.current = marks;
 	importedRef.current = imported;
 	pdfRef.current = pdf;
 	draftRef.current = {
 		tool,
-		pass,
 		ink,
 		label
 	};
@@ -2327,6 +2311,12 @@ function Desk() {
 	mateDocRef.current = mate;
 	scaleRef.current = scale;
 	stayRef.current = staySelection;
+	paidRef.current = paid;
+	(0, import_react.useEffect)(() => {
+		const stored = unlockStored();
+		paidRef.current = stored;
+		setPaid(stored);
+	}, []);
 	(0, import_react.useEffect)(() => {
 		try {
 			const stored = localStorage.getItem("quire-stay-selection") === "1";
@@ -2605,7 +2595,7 @@ function Desk() {
 			id: crypto.randomUUID(),
 			page: pageNumber,
 			kind,
-			pass: draft.pass,
+			pass: 1,
 			ink: draft.ink,
 			label: draft.label,
 			note: "",
@@ -2698,10 +2688,6 @@ function Desk() {
 		window.addEventListener("keydown", onKey);
 		return () => window.removeEventListener("keydown", onKey);
 	});
-	function choosePass(next) {
-		setPass(next);
-		setInk(next === 1 ? "brass" : "steel");
-	}
 	function gestureStart() {
 		commitNoteHistory();
 		gestureBase.current = marksRef.current;
@@ -2730,7 +2716,7 @@ function Desk() {
 			id: crypto.randomUUID(),
 			page: pageNumber,
 			kind: place.kind,
-			pass: draft.pass,
+			pass: 1,
 			ink: draft.ink,
 			label: draft.label,
 			note: "",
@@ -2838,6 +2824,12 @@ function Desk() {
 			setError("Choose a PDF.");
 			return;
 		}
+		if (next !== "sample" && !paidRef.current) {
+			setPassError("");
+			setStatus("Enter the passcode before opening a PDF.");
+			if (pdfRef.current) setGate("open");
+			return;
+		}
 		if (marksRef.current.length > 0) {
 			setPending(next);
 			return;
@@ -2854,6 +2846,11 @@ function Desk() {
 		await loadBytes(next.name, bytes);
 	}
 	async function exportPdf() {
+		if (!paidRef.current) {
+			setPassError("");
+			setGate("pdf");
+			return;
+		}
 		const bytes = bytesRef.current;
 		if (!bytes || !fileName) return;
 		setExporting("pdf");
@@ -2929,6 +2926,11 @@ function Desk() {
 		}
 	}
 	async function findChanges() {
+		if (!paidRef.current) {
+			setPassError("");
+			setGate("changes");
+			return;
+		}
 		const later = pdfRef.current;
 		const earlier = mateDocRef.current?.pdf;
 		if (!later || !earlier || comparing) return;
@@ -2936,7 +2938,7 @@ function Desk() {
 		setError("");
 		setStatus("Comparing. This file is the later copy.");
 		try {
-			const found = await compareDocuments(earlier, later, draftRef.current.pass);
+			const found = await compareDocuments(earlier, later);
 			earlierNameRef.current = mateDocRef.current?.name ?? earlierNameRef.current;
 			const kept = marksRef.current.filter((mark) => !mark.id.startsWith("change-"));
 			commitNoteHistory();
@@ -2958,6 +2960,11 @@ function Desk() {
 		}
 	}
 	async function exportChanges() {
+		if (!paidRef.current) {
+			setPassError("");
+			setGate("changes-pdf");
+			return;
+		}
 		const bytes = bytesRef.current;
 		if (!bytes || !fileName) return;
 		const changes = marksRef.current.filter((mark) => mark.id.startsWith("change-"));
@@ -2984,11 +2991,40 @@ function Desk() {
 		}
 	}
 	function exportSheet() {
+		if (!paidRef.current) {
+			setPassError("");
+			setGate("sheet");
+			return;
+		}
 		if (!fileName) return;
 		commitNoteHistory();
 		const markdown = marksToMarkdown(fileName, marksRef.current);
 		downloadBlob(new Blob([markdown], { type: "text/markdown;charset=utf-8" }), `${safeStem(fileName)}-notes.md`);
 		setStatus("Comment sheet downloaded.");
+	}
+	function closeGate() {
+		setGate(null);
+		setPassInput("");
+		setPassError("");
+	}
+	async function submitPasscode() {
+		if (!await tryPasscode(passInput)) {
+			setPassError("That passcode is not recognised.");
+			return;
+		}
+		paidRef.current = true;
+		setPaid(true);
+		const next = gate;
+		setGate(null);
+		setPassInput("");
+		setPassError("");
+		setStatus("Passcode accepted. You can open a PDF.");
+		if (next === "open") fileRef.current?.click();
+		else if (next === "compare") mateFileRef.current?.click();
+		else if (next === "changes") findChanges();
+		else if (next === "pdf") exportPdf();
+		else if (next === "sheet") exportSheet();
+		else if (next === "changes-pdf") exportChanges();
 	}
 	const canUndo = undoRef.current.length > 0 || noteDirty.current;
 	const canRedo = redoRef.current.length > 0;
@@ -3031,13 +3067,21 @@ function Desk() {
 			event.preventDefault();
 			setDragOver(false);
 			const file = event.dataTransfer.files?.[0];
-			if (file) requestOpen(file);
+			if (!file) return;
+			if (!paidRef.current) {
+				setPassError("");
+				setStatus("Enter the passcode before opening a PDF.");
+				if (pdfRef.current) setGate("open");
+				else document.getElementById("quire-passcode")?.focus();
+				return;
+			}
+			requestOpen(file);
 		},
 		children: [
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("header", {
 				className: "shrink-0 border-b border-line-dark",
 				children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-					className: "flex h-14 items-center gap-2 px-3",
+					className: "flex h-14 items-center gap-2 overflow-x-auto px-3",
 					children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 							className: "quire-word font-display text-2xl leading-none tracking-tight",
@@ -3048,23 +3092,23 @@ function Desk() {
 							children: fileName
 						}),
 						!fileName && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "min-w-0 flex-1" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-							htmlFor: "quire-open",
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+							type: "button",
+							onClick: () => {
+								if (paidRef.current) {
+									fileRef.current?.click();
+									return;
+								}
+								setPassError("");
+								setStatus("Enter the passcode before opening a PDF.");
+								if (pdfRef.current) setGate("open");
+								else document.getElementById("quire-passcode")?.focus();
+							},
 							className: "quire-file inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-brass px-3 text-sm text-paper",
-							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, {
-									size: 16,
-									strokeWidth: 1.75
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "hidden sm:inline",
-									children: "Open PDF"
-								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "sm:hidden",
-									children: "Open"
-								})
-							]
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, {
+								size: 16,
+								strokeWidth: 1.75
+							}), "Open PDF"]
 						}),
 						pdf && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
@@ -3077,10 +3121,7 @@ function Desk() {
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileDown, {
 									size: 16,
 									strokeWidth: 1.75
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "hidden md:inline",
-									children: exporting === "pdf" ? "Saving…" : "Marked PDF"
-								})]
+								}), exporting === "pdf" ? "Saving…" : "Marked PDF"]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 								type: "button",
@@ -3092,10 +3133,7 @@ function Desk() {
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(GitCompare, {
 									size: 16,
 									strokeWidth: 1.75
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "hidden md:inline",
-									children: exporting === "changes" ? "Saving…" : "Changes PDF"
-								})]
+								}), exporting === "changes" ? "Saving…" : "Changes PDF"]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 								type: "button",
@@ -3107,10 +3145,7 @@ function Desk() {
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(FileText, {
 									size: 16,
 									strokeWidth: 1.75
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "hidden md:inline",
-									children: "Sheet"
-								})]
+								}), "Sheet"]
 							}),
 							/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 								type: "button",
@@ -3118,13 +3153,17 @@ function Desk() {
 								"aria-pressed": railOpen,
 								"aria-label": "Marks",
 								className: `inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${railOpen ? "bg-brass text-paper" : "bg-raised text-paper"}`,
-								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PanelRight, {
-									size: 16,
-									strokeWidth: 1.75
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "tabular-nums",
-									children: marks.length
-								})]
+								children: [
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)(PanelRight, {
+										size: 16,
+										strokeWidth: 1.75
+									}),
+									"Marks",
+									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+										className: "tabular-nums",
+										children: marks.length
+									})
+								]
 							})
 						] })
 					]
@@ -3150,10 +3189,7 @@ function Desk() {
 								children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Icon, {
 									size: 16,
 									strokeWidth: 1.75
-								}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-									className: "hidden sm:inline",
-									children: item.name
-								})]
+								}), item.name]
 							}, item.id);
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "mx-1 h-6 w-px shrink-0 bg-line-dark" }),
@@ -3167,10 +3203,7 @@ function Desk() {
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Undo2, {
 								size: 16,
 								strokeWidth: 1.75
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "hidden sm:inline",
-								children: "Undo"
-							})]
+							}), "Undo"]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							type: "button",
@@ -3182,37 +3215,20 @@ function Desk() {
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Redo2, {
 								size: 16,
 								strokeWidth: 1.75
-							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-								className: "hidden sm:inline",
-								children: "Redo"
-							})]
+							}), "Redo"]
 						}),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { className: "mx-1 h-6 w-px shrink-0 bg-line-dark" }),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							"aria-pressed": pass === 1,
-							onClick: () => choosePass(1),
-							className: `h-11 shrink-0 rounded-md px-3 text-sm ${pass === 1 ? "bg-brass text-paper" : "bg-raised text-paper"}`,
-							children: "First read"
-						}),
-						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
-							type: "button",
-							"aria-pressed": pass === 2,
-							onClick: () => choosePass(2),
-							className: `h-11 shrink-0 rounded-md px-3 text-sm ${pass === 2 ? "bg-steel text-paper" : "bg-raised text-paper"}`,
-							children: "Second read"
-						}),
-						INKS.map((item) => /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+						INKS.map((item) => /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 							type: "button",
 							title: item.name,
 							"aria-label": item.name,
 							"aria-pressed": ink === item.id,
 							onClick: () => setInk(item.id),
-							className: `inline-flex h-11 w-11 shrink-0 items-center justify-center ${ink === item.id ? "bg-stamp" : "bg-paper"}`,
-							children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
+							className: `inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${ink === item.id ? "bg-stamp" : "bg-paper"}`,
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
 								className: "block h-4 w-4 rounded-full",
 								style: { background: `var(--color-${item.id})` }
-							})
+							}), item.name]
 						}, item.id)),
 						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
 							className: "sr-only",
@@ -3307,7 +3323,14 @@ function Desk() {
 							"aria-label": "Compare",
 							"aria-pressed": !!mate,
 							disabled: mateBusy,
-							onClick: () => mateFileRef.current?.click(),
+							onClick: () => {
+								if (!paidRef.current) {
+									setPassError("");
+									setGate("compare");
+									return;
+								}
+								mateFileRef.current?.click();
+							},
 							className: `inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40 ${mate ? "bg-brass text-paper" : "bg-raised text-paper"}`,
 							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Files, {
 								size: 16,
@@ -3343,30 +3366,74 @@ function Desk() {
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "mt-4 max-w-lg text-base text-pretty text-muted",
-										children: "Highlight, underline, or strike a passage, or drag a callout or an arrow. Each mark takes a note, a colour, and a first or second read. Nothing is uploaded. Marked PDF downloads only the pages you marked, for Acrobat or Preview. Or take a comment sheet."
+										children: "Highlight, underline, or strike a passage, or drag a callout or an arrow. Each mark takes a note and a colour. Nothing is uploaded. Marked PDF downloads only the pages you marked, for Acrobat or Preview. Or take a comment sheet."
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
-										className: "mt-6 flex flex-wrap gap-2",
-										children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
-											htmlFor: "quire-open",
-											className: "quire-file inline-flex h-11 items-center gap-2 rounded-md bg-brass px-4 text-sm text-paper",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, {
-												size: 16,
-												strokeWidth: 1.75
-											}), "Open a PDF"]
-										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
-											type: "button",
-											onClick: () => requestOpen("sample"),
-											className: "inline-flex h-11 items-center gap-2 rounded-md bg-raised px-4 text-sm text-paper",
-											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(BookOpen, {
-												size: 16,
-												strokeWidth: 1.75
-											}), "Try the sample"]
+										className: "mt-6",
+										children: [!paid && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+											onSubmit: (event) => {
+												event.preventDefault();
+												submitPasscode();
+											},
+											children: [
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+													className: "text-sm text-paper",
+													htmlFor: "quire-passcode",
+													children: "Passcode"
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+													className: "mt-1 text-sm text-muted",
+													children: "Enter this before opening your PDF. It stays on this computer."
+												}),
+												/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+													className: "mt-2 flex flex-wrap gap-2",
+													children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+														id: "quire-passcode",
+														value: passInput,
+														onChange: (event) => {
+															setPassInput(event.target.value);
+															setPassError("");
+														},
+														autoComplete: "off",
+														spellCheck: false,
+														className: "h-11 min-w-0 flex-1 rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+													}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+														type: "submit",
+														className: "h-11 rounded-md bg-brass px-4 text-sm text-paper",
+														children: "Unlock"
+													})]
+												}),
+												passError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+													className: "mt-3 text-sm",
+													role: "alert",
+													children: passError
+												})
+											]
+										}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+											className: `flex flex-wrap gap-2 ${paid ? "" : "mt-4"}`,
+											children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+												type: "button",
+												disabled: !paid,
+												onClick: () => fileRef.current?.click(),
+												className: "quire-file inline-flex h-11 items-center gap-2 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Upload, {
+													size: 16,
+													strokeWidth: 1.75
+												}), "Open a PDF"]
+											}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
+												type: "button",
+												onClick: () => requestOpen("sample"),
+												className: "inline-flex h-11 items-center gap-2 rounded-md bg-raised px-4 text-sm text-paper",
+												children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(BookOpen, {
+													size: 16,
+													strokeWidth: 1.75
+												}), "Try the sample"]
+											})]
 										})]
 									}),
 									/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "mt-6 max-w-lg text-sm text-pretty text-muted",
-										children: "The sample is a two-page interim results note. The revenue percentage does not match the figures. First read is the first time through the file. Second read is the check after that. Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Changes PDF downloads that list and the changed pages."
+										children: "The sample needs no passcode. Enter the passcode, then open your own PDF. Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted."
 									}),
 									error && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 										className: "mt-4 text-sm text-paper",
@@ -3384,7 +3451,7 @@ function Desk() {
 							className: "px-3 py-6 sm:px-8",
 							children: [marks.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "mb-4 text-center text-sm text-muted",
-								children: tool === "callout" ? "Press where it should point, then drag the box into place. A selected callout can be dragged; the dot moves the point." : tool === "arrow" ? "Drag the arrow. Select it, then drag the line or either end." : tool === "select" ? "Select is on. Click a mark to move it, or choose Highlight, Underline, or Strike." : `Select a line. This mark is a ${pass === 1 ? "first read" : "second read"}, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}`
+								children: tool === "callout" ? "Press where it should point, then drag the box into place. A selected callout can be dragged; the dot moves the point." : tool === "arrow" ? "Drag the arrow. Select it, then drag the line or either end." : tool === "select" ? "Select is on. Click a mark to move it, or choose Highlight, Underline, or Strike." : `Select a line, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}`
 							}), renderPages(pdf, workNumbers, "work", scale)]
 						})
 					}),
@@ -3405,13 +3472,9 @@ function Desk() {
 						children: [/* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Pane, {
 							title: fileName ?? "This file",
 							scrollerRef: leftScrollRef,
-							children: [marks.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("p", {
+							children: [marks.length === 0 && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
 								className: "mb-4 text-center text-sm text-muted",
-								children: [
-									"Select a line on this file. This mark is a ",
-									pass === 1 ? "first read" : "second read",
-									", in the colour chosen above."
-								]
+								children: "Select a line on this file, in the colour chosen above."
 							}), renderPages(pdf, workNumbers, "work", scale)]
 						}), /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(Pane, {
 							title: mate.name,
@@ -3463,10 +3526,7 @@ function Desk() {
 			/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("footer", {
 				className: "flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-t border-line-dark px-3 text-sm text-muted",
 				children: [
-					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", {
-						className: "hidden sm:inline",
-						children: "On this machine"
-					}),
+					/* @__PURE__ */ (0, import_jsx_runtime.jsx)("span", { children: "On this machine" }),
 					pdf && /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(import_jsx_runtime.Fragment, { children: [
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("label", {
 							className: "inline-flex items-center gap-2 tabular-nums",
@@ -3507,12 +3567,12 @@ function Desk() {
 						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("span", {
 							className: "inline-flex items-center",
 							children: [
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 									type: "button",
 									"aria-label": "Zoom out",
 									onClick: () => nudgeZoom(-1),
-									className: "inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised",
-									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Minus, { size: 14 })
+									className: "inline-flex h-11 shrink-0 items-center gap-1 rounded-md px-2 text-paper hover:bg-raised",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Minus, { size: 14 }), "Zoom out"]
 								}),
 								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
 									type: "button",
@@ -3521,12 +3581,12 @@ function Desk() {
 									title: "Fit width",
 									children: zoomMode === "fit" ? "Fit" : `${Math.round(scale * 100)}%`
 								}),
-								/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("button", {
 									type: "button",
 									"aria-label": "Zoom in",
 									onClick: () => nudgeZoom(1),
-									className: "inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised",
-									children: /* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 14 })
+									className: "inline-flex h-11 shrink-0 items-center gap-1 rounded-md px-2 text-paper hover:bg-raised",
+									children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)(Plus, { size: 14 }), "Zoom in"]
 								})
 							]
 						})
@@ -3547,7 +3607,12 @@ function Desk() {
 				onChange: (event) => {
 					const file = event.target.files?.[0];
 					event.target.value = "";
-					if (file) requestOpen(file);
+					if (!file) return;
+					if (!paidRef.current) {
+						setStatus("Enter the passcode before opening a PDF.");
+						return;
+					}
+					requestOpen(file);
 				}
 			}),
 			/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
@@ -3561,6 +3626,61 @@ function Desk() {
 					event.target.value = "";
 					if (file) loadMate(file);
 				}
+			}),
+			gate && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
+				className: "fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4",
+				children: /* @__PURE__ */ (0, import_jsx_runtime.jsxs)("form", {
+					className: "w-full max-w-sm rounded-md bg-paper p-5 text-ink",
+					onSubmit: (event) => {
+						event.preventDefault();
+						submitPasscode();
+					},
+					children: [
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("h2", {
+							className: "text-2xl text-balance",
+							children: "Passcode"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "mt-2 text-sm text-pretty text-ink-soft",
+							children: "Enter it before choosing a PDF. Once it is accepted, it stays on this computer."
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("label", {
+							className: "mt-4 block text-sm",
+							htmlFor: "quire-passcode",
+							children: "Passcode"
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsx)("input", {
+							id: "quire-passcode",
+							value: passInput,
+							onChange: (event) => {
+								setPassInput(event.target.value);
+								setPassError("");
+							},
+							autoFocus: true,
+							autoComplete: "off",
+							spellCheck: false,
+							className: "mt-1 h-11 w-full rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+						}),
+						passError && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("p", {
+							className: "mt-3 text-sm",
+							role: "alert",
+							children: passError
+						}),
+						/* @__PURE__ */ (0, import_jsx_runtime.jsxs)("div", {
+							className: "mt-5 flex justify-end gap-2",
+							children: [/* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "button",
+								onClick: closeGate,
+								className: "h-11 rounded-md px-4 text-sm text-ink",
+								children: "Not now"
+							}), /* @__PURE__ */ (0, import_jsx_runtime.jsx)("button", {
+								type: "submit",
+								className: "h-11 rounded-md bg-brass px-4 text-sm text-paper",
+								children: "Unlock"
+							})]
+						})
+					]
+				})
 			}),
 			pending && /* @__PURE__ */ (0, import_jsx_runtime.jsx)("div", {
 				className: "fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4",
@@ -3644,6 +3764,7 @@ var init_Desk = __esmMin((() => {
 	init_pdf_client();
 	init_sample_pdf();
 	init_session();
+	init_passcode();
 	TOOLS = [
 		{
 			id: "select",

@@ -10,7 +10,7 @@ import {
   type PDFFont,
   type PDFPage,
 } from "pdf-lib";
-import { formatContents, INK_RGB, labelName, readName, sortMarks, type Mark, type Point } from "@/lib/marks";
+import { formatContents, INK_RGB, labelName, sortMarks, type Mark, type Point } from "@/lib/marks";
 import { edgeToward } from "@/lib/geometry";
 
 function pdfDate(ms: number): string {
@@ -70,7 +70,7 @@ function common(doc: PDFDocument, page: PDFPage, mark: Mark, rect: number[], col
     F: 4,
     Contents: PDFHexString.fromText(formatContents(mark)),
     T: PDFHexString.fromText("Quire"),
-    Subj: PDFHexString.fromText(`${readName(mark.pass)} · ${labelName(mark.label)}`),
+    Subj: PDFHexString.fromText(labelName(mark.label)),
     NM: PDFHexString.fromText(`quire-${mark.id}`),
     M: PDFString.of(pdfDate(Date.now())),
     CreationDate: PDFString.of(pdfDate(mark.createdAt)),
@@ -172,7 +172,7 @@ function makeAnnot(doc: PDFDocument, page: PDFPage, mark: Mark): PDFDict | null 
     Border: [0, 0, 0],
     Contents: PDFHexString.fromText(formatContents(mark)),
     T: PDFHexString.fromText("Quire"),
-    Subj: PDFHexString.fromText(`${readName(mark.pass)} · ${labelName(mark.label)}`),
+    Subj: PDFHexString.fromText(labelName(mark.label)),
     NM: PDFHexString.fromText(`quire-${mark.id}`),
     M: PDFString.of(pdfDate(Date.now())),
     CreationDate: PDFString.of(pdfDate(mark.createdAt)),

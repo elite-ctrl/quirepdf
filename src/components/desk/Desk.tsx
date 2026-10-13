@@ -31,7 +31,6 @@ import {
   type Kind,
   type LabelId,
   type Mark,
-  type Pass,
   type Tool,
 } from "@/lib/marks";
 import { compareDocuments } from "@/lib/compare-pdf";
@@ -39,6 +38,7 @@ import { comparisonResultsPdf, markedPagesPdf } from "@/lib/embed-marks";
 import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@/lib/pdf-client";
 import { buildSamplePdf } from "@/lib/sample-pdf";
 import { fingerprint, loadSession, saveSession } from "@/lib/session";
+import { tryPasscode, unlockStored } from "@/lib/passcode";
 
 const TOOLS: { id: Tool; name: string; hint: string; icon: typeof MousePointer2 }[] = [
   { id: "select", name: "Select", hint: "Select marks (V)", icon: MousePointer2 },
@@ -105,7 +105,6 @@ export function Desk() {
   const [mateBusy, setMateBusy] = useState(false);
   const [matePage, setMatePage] = useState(1);
   const [tool, setTool] = useState<Tool>("select");
-  const [pass, setPass] = useState<Pass>(1);
   const [ink, setInk] = useState<InkId>("brass");
   const [label, setLabel] = useState<LabelId>("query");
   const [marks, setMarks] = useState<Mark[]>([]);
@@ -127,6 +126,10 @@ export function Desk() {
   const [dragOver, setDragOver] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
   const [staySelection, setStaySelection] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const [gate, setGate] = useState<"open" | "compare" | "changes" | "pdf" | "sheet" | "changes-pdf" | "unlock" | null>(null);
+  const [passInput, setPassInput] = useState("");
+  const [passError, setPassError] = useState("");
 
   const singleScrollRef = useRef<HTMLDivElement>(null);
   const leftScrollRef = useRef<HTMLDivElement>(null);
@@ -140,7 +143,7 @@ export function Desk() {
   const importedRef = useRef(imported);
   const bytesRef = useRef<Uint8Array | null>(null);
   const pdfRef = useRef<PdfDoc | null>(null);
-  const draftRef = useRef({ tool, pass, ink, label });
+  const draftRef = useRef({ tool, ink, label });
   const undoRef = useRef<Mark[][]>([]);
   const redoRef = useRef<Mark[][]>([]);
   const noteDirty = useRef(false);
@@ -153,16 +156,24 @@ export function Desk() {
   const scaleRef = useRef(scale);
   const earlierNameRef = useRef<string | null>(null);
   const stayRef = useRef(false);
+  const paidRef = useRef(false);
   const applyRef = useRef<(kind: "highlight" | "underline" | "strikeout") => boolean>(() => false);
 
   marksRef.current = marks;
   importedRef.current = imported;
   pdfRef.current = pdf;
-  draftRef.current = { tool, pass, ink, label };
+  draftRef.current = { tool, ink, label };
   activeIdRef.current = activeId;
   mateDocRef.current = mate;
   scaleRef.current = scale;
   stayRef.current = staySelection;
+  paidRef.current = paid;
+
+  useEffect(() => {
+    const stored = unlockStored();
+    paidRef.current = stored;
+    setPaid(stored);
+  }, []);
 
   useEffect(() => {
     try {
@@ -438,7 +449,7 @@ export function Desk() {
       id: crypto.randomUUID(),
       page: pageNumber,
       kind,
-      pass: draft.pass,
+      pass: 1,
       ink: draft.ink,
       label: draft.label,
       note: "",
@@ -540,11 +551,6 @@ export function Desk() {
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  function choosePass(next: Pass) {
-    setPass(next);
-    setInk(next === 1 ? "brass" : "steel");
-  }
-
   function gestureStart() {
     commitNoteHistory();
     gestureBase.current = marksRef.current;
@@ -573,7 +579,7 @@ export function Desk() {
       id: crypto.randomUUID(),
       page: pageNumber,
       kind: place.kind,
-      pass: draft.pass,
+      pass: 1,
       ink: draft.ink,
       label: draft.label,
       note: "",
@@ -691,6 +697,12 @@ export function Desk() {
       setError("Choose a PDF.");
       return;
     }
+    if (next !== "sample" && !paidRef.current) {
+      setPassError("");
+      setStatus("Enter the passcode before opening a PDF.");
+      if (pdfRef.current) setGate("open");
+      return;
+    }
     if (marksRef.current.length > 0) {
       setPending(next);
       return;
@@ -710,6 +722,11 @@ export function Desk() {
   }
 
   async function exportPdf() {
+    if (!paidRef.current) {
+      setPassError("");
+      setGate("pdf");
+      return;
+    }
     const bytes = bytesRef.current;
     if (!bytes || !fileName) return;
     setExporting("pdf");
@@ -790,6 +807,11 @@ export function Desk() {
   }
 
   async function findChanges() {
+    if (!paidRef.current) {
+      setPassError("");
+      setGate("changes");
+      return;
+    }
     const later = pdfRef.current;
     const earlier = mateDocRef.current?.pdf;
     if (!later || !earlier || comparing) return;
@@ -797,7 +819,7 @@ export function Desk() {
     setError("");
     setStatus("Comparing. This file is the later copy.");
     try {
-      const found = await compareDocuments(earlier, later, draftRef.current.pass);
+      const found = await compareDocuments(earlier, later);
       earlierNameRef.current = mateDocRef.current?.name ?? earlierNameRef.current;
       const kept = marksRef.current.filter((mark) => !mark.id.startsWith("change-"));
       commitNoteHistory();
@@ -825,6 +847,11 @@ export function Desk() {
   }
 
   async function exportChanges() {
+    if (!paidRef.current) {
+      setPassError("");
+      setGate("changes-pdf");
+      return;
+    }
     const bytes = bytesRef.current;
     if (!bytes || !fileName) return;
     const changes = marksRef.current.filter((mark) => mark.id.startsWith("change-"));
@@ -856,11 +883,43 @@ export function Desk() {
   }
 
   function exportSheet() {
+    if (!paidRef.current) {
+      setPassError("");
+      setGate("sheet");
+      return;
+    }
     if (!fileName) return;
     commitNoteHistory();
     const markdown = marksToMarkdown(fileName, marksRef.current);
     downloadBlob(new Blob([markdown], { type: "text/markdown;charset=utf-8" }), `${safeStem(fileName)}-notes.md`);
     setStatus("Comment sheet downloaded.");
+  }
+
+  function closeGate() {
+    setGate(null);
+    setPassInput("");
+    setPassError("");
+  }
+
+  async function submitPasscode() {
+    const ok = await tryPasscode(passInput);
+    if (!ok) {
+      setPassError("That passcode is not recognised.");
+      return;
+    }
+    paidRef.current = true;
+    setPaid(true);
+    const next = gate;
+    setGate(null);
+    setPassInput("");
+    setPassError("");
+    setStatus("Passcode accepted. You can open a PDF.");
+    if (next === "open") fileRef.current?.click();
+    else if (next === "compare") mateFileRef.current?.click();
+    else if (next === "changes") void findChanges();
+    else if (next === "pdf") void exportPdf();
+    else if (next === "sheet") exportSheet();
+    else if (next === "changes-pdf") void exportChanges();
   }
 
   const canUndo = undoRef.current.length > 0 || noteDirty.current;
@@ -917,24 +976,41 @@ export function Desk() {
         event.preventDefault();
         setDragOver(false);
         const file = event.dataTransfer.files?.[0];
-        if (file) requestOpen(file);
+        if (!file) return;
+        if (!paidRef.current) {
+          setPassError("");
+          setStatus("Enter the passcode before opening a PDF.");
+          if (pdfRef.current) setGate("open");
+          else document.getElementById("quire-passcode")?.focus();
+          return;
+        }
+        requestOpen(file);
       }}
     >
       <header className="shrink-0 border-b border-line-dark">
-        <div className="flex h-14 items-center gap-2 px-3">
+        <div className="flex h-14 items-center gap-2 overflow-x-auto px-3">
           <p className="quire-word font-display text-2xl leading-none tracking-tight">Quire</p>
           {fileName && (
             <p className="hidden min-w-0 flex-1 truncate text-sm text-muted sm:block">{fileName}</p>
           )}
           {!fileName && <span className="min-w-0 flex-1" />}
-          <label
-            htmlFor="quire-open"
+          <button
+            type="button"
+            onClick={() => {
+              if (paidRef.current) {
+                fileRef.current?.click();
+                return;
+              }
+              setPassError("");
+              setStatus("Enter the passcode before opening a PDF.");
+              if (pdfRef.current) setGate("open");
+              else document.getElementById("quire-passcode")?.focus();
+            }}
             className="quire-file inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-brass px-3 text-sm text-paper"
           >
             <Upload size={16} strokeWidth={1.75} />
-            <span className="hidden sm:inline">Open PDF</span>
-            <span className="sm:hidden">Open</span>
-          </label>
+            Open PDF
+          </button>
           {pdf && (
             <>
               <button
@@ -946,7 +1022,7 @@ export function Desk() {
                 className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
               >
                 <FileDown size={16} strokeWidth={1.75} />
-                <span className="hidden md:inline">{exporting === "pdf" ? "Saving…" : "Marked PDF"}</span>
+                {exporting === "pdf" ? "Saving…" : "Marked PDF"}
               </button>
               <button
                 type="button"
@@ -957,7 +1033,7 @@ export function Desk() {
                 className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
               >
                 <GitCompare size={16} strokeWidth={1.75} />
-                <span className="hidden md:inline">{exporting === "changes" ? "Saving…" : "Changes PDF"}</span>
+                {exporting === "changes" ? "Saving…" : "Changes PDF"}
               </button>
               <button
                 type="button"
@@ -968,7 +1044,7 @@ export function Desk() {
                 className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
               >
                 <FileText size={16} strokeWidth={1.75} />
-                <span className="hidden md:inline">Sheet</span>
+                Sheet
               </button>
               <button
                 type="button"
@@ -978,6 +1054,7 @@ export function Desk() {
                 className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${railOpen ? "bg-brass text-paper" : "bg-raised text-paper"}`}
               >
                 <PanelRight size={16} strokeWidth={1.75} />
+                Marks
                 <span className="tabular-nums">{marks.length}</span>
               </button>
             </>
@@ -1007,7 +1084,7 @@ export function Desk() {
                   className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${pressed ? "bg-brass text-paper" : "bg-raised text-paper"}`}
                 >
                   <Icon size={16} strokeWidth={1.75} />
-                  <span className="hidden sm:inline">{item.name}</span>
+                  {item.name}
                 </button>
               );
             })}
@@ -1021,7 +1098,7 @@ export function Desk() {
               className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
             >
               <Undo2 size={16} strokeWidth={1.75} />
-              <span className="hidden sm:inline">Undo</span>
+              Undo
             </button>
             <button
               type="button"
@@ -1032,25 +1109,9 @@ export function Desk() {
               className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
             >
               <Redo2 size={16} strokeWidth={1.75} />
-              <span className="hidden sm:inline">Redo</span>
+              Redo
             </button>
             <span className="mx-1 h-6 w-px shrink-0 bg-line-dark" />
-            <button
-              type="button"
-              aria-pressed={pass === 1}
-              onClick={() => choosePass(1)}
-              className={`h-11 shrink-0 rounded-md px-3 text-sm ${pass === 1 ? "bg-brass text-paper" : "bg-raised text-paper"}`}
-            >
-              First read
-            </button>
-            <button
-              type="button"
-              aria-pressed={pass === 2}
-              onClick={() => choosePass(2)}
-              className={`h-11 shrink-0 rounded-md px-3 text-sm ${pass === 2 ? "bg-steel text-paper" : "bg-raised text-paper"}`}
-            >
-              Second read
-            </button>
             {INKS.map((item) => (
               <button
                 key={item.id}
@@ -1059,9 +1120,10 @@ export function Desk() {
                 aria-label={item.name}
                 aria-pressed={ink === item.id}
                 onClick={() => setInk(item.id)}
-                className={`inline-flex h-11 w-11 shrink-0 items-center justify-center ${ink === item.id ? "bg-stamp" : "bg-paper"}`}
+                className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${ink === item.id ? "bg-stamp" : "bg-paper"}`}
               >
                 <span className="block h-4 w-4 rounded-full" style={{ background: `var(--color-${item.id})` }} />
+                {item.name}
               </button>
             ))}
             <label className="sr-only" htmlFor="quire-new-label">
@@ -1152,7 +1214,14 @@ export function Desk() {
               aria-label="Compare"
               aria-pressed={!!mate}
               disabled={mateBusy}
-              onClick={() => mateFileRef.current?.click()}
+              onClick={() => {
+                if (!paidRef.current) {
+                  setPassError("");
+                  setGate("compare");
+                  return;
+                }
+                mateFileRef.current?.click();
+              }}
               className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40 ${mate ? "bg-brass text-paper" : "bg-raised text-paper"}`}
             >
               <Files size={16} strokeWidth={1.75} />
@@ -1177,29 +1246,67 @@ export function Desk() {
                     Mark the text. Keep the file.
                   </h1>
                   <p className="mt-4 max-w-lg text-base text-pretty text-muted">
-                    Highlight, underline, or strike a passage, or drag a callout or an arrow. Each mark takes a note, a colour, and a first or second read.
+                    Highlight, underline, or strike a passage, or drag a callout or an arrow. Each mark takes a note and a colour.
                     Nothing is uploaded. Marked PDF downloads only the pages you marked, for Acrobat or Preview. Or take a comment sheet.
                   </p>
-                  <div className="mt-6 flex flex-wrap gap-2">
-                    <label
-                      htmlFor="quire-open"
-                      className="quire-file inline-flex h-11 items-center gap-2 rounded-md bg-brass px-4 text-sm text-paper"
-                    >
-                      <Upload size={16} strokeWidth={1.75} />
-                      Open a PDF
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => requestOpen("sample")}
-                      className="inline-flex h-11 items-center gap-2 rounded-md bg-raised px-4 text-sm text-paper"
-                    >
-                      <BookOpen size={16} strokeWidth={1.75} />
-                      Try the sample
-                    </button>
+                  <div className="mt-6">
+                    {!paid && (
+                      <form
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void submitPasscode();
+                        }}
+                      >
+                        <label className="text-sm text-paper" htmlFor="quire-passcode">
+                          Passcode
+                        </label>
+                        <p className="mt-1 text-sm text-muted">Enter this before opening your PDF. It stays on this computer.</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <input
+                            id="quire-passcode"
+                            value={passInput}
+                            onChange={(event) => {
+                              setPassInput(event.target.value);
+                              setPassError("");
+                            }}
+                            autoComplete="off"
+                            spellCheck={false}
+                            className="h-11 min-w-0 flex-1 rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+                          />
+                          <button type="submit" className="h-11 rounded-md bg-brass px-4 text-sm text-paper">
+                            Unlock
+                          </button>
+                        </div>
+                        {passError && (
+                          <p className="mt-3 text-sm" role="alert">
+                            {passError}
+                          </p>
+                        )}
+                      </form>
+                    )}
+                    <div className={`flex flex-wrap gap-2 ${paid ? "" : "mt-4"}`}>
+                      <button
+                        type="button"
+                        disabled={!paid}
+                        onClick={() => fileRef.current?.click()}
+                        className="quire-file inline-flex h-11 items-center gap-2 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40"
+                      >
+                        <Upload size={16} strokeWidth={1.75} />
+                        Open a PDF
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => requestOpen("sample")}
+                        className="inline-flex h-11 items-center gap-2 rounded-md bg-raised px-4 text-sm text-paper"
+                      >
+                        <BookOpen size={16} strokeWidth={1.75} />
+                        Try the sample
+                      </button>
+                    </div>
                   </div>
                   <p className="mt-6 max-w-lg text-sm text-pretty text-muted">
-                    The sample is a two-page interim results note. The revenue percentage does not match the figures.
-                    First read is the first time through the file. Second read is the check after that. Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Changes PDF downloads that list and the changed pages.
+                    The sample needs no passcode. Enter the passcode, then open your own PDF.
+                    Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted.
                   </p>
                   {error && (
                     <p className="mt-4 text-sm text-paper" role="alert">
@@ -1222,7 +1329,7 @@ export function Desk() {
                       ? "Drag the arrow. Select it, then drag the line or either end."
                       : tool === "select"
                         ? "Select is on. Click a mark to move it, or choose Highlight, Underline, or Strike."
-                        : `Select a line. This mark is a ${pass === 1 ? "first read" : "second read"}, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}`}
+                        : `Select a line, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}`}
                 </p>
               )}
               {renderPages(pdf, workNumbers, "work", scale)}
@@ -1244,7 +1351,7 @@ export function Desk() {
             <Pane title={fileName ?? "This file"} scrollerRef={leftScrollRef}>
               {marks.length === 0 && (
                 <p className="mb-4 text-center text-sm text-muted">
-                  Select a line on this file. This mark is a {pass === 1 ? "first read" : "second read"}, in the colour chosen above.
+                  Select a line on this file, in the colour chosen above.
                 </p>
               )}
               {renderPages(pdf, workNumbers, "work", scale)}
@@ -1306,7 +1413,7 @@ export function Desk() {
       </div>
 
       <footer className="flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-t border-line-dark px-3 text-sm text-muted">
-        <span className="hidden sm:inline">On this machine</span>
+        <span>On this machine</span>
         {pdf && (
           <>
             <label className="inline-flex items-center gap-2 tabular-nums">
@@ -1347,8 +1454,9 @@ export function Desk() {
               </label>
             )}
             <span className="inline-flex items-center">
-              <button type="button" aria-label="Zoom out" onClick={() => nudgeZoom(-1)} className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised">
+              <button type="button" aria-label="Zoom out" onClick={() => nudgeZoom(-1)} className="inline-flex h-11 shrink-0 items-center gap-1 rounded-md px-2 text-paper hover:bg-raised">
                 <Minus size={14} />
+                Zoom out
               </button>
               <button
                 type="button"
@@ -1358,8 +1466,9 @@ export function Desk() {
               >
                 {zoomMode === "fit" ? "Fit" : `${Math.round(scale * 100)}%`}
               </button>
-              <button type="button" aria-label="Zoom in" onClick={() => nudgeZoom(1)} className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-raised">
+              <button type="button" aria-label="Zoom in" onClick={() => nudgeZoom(1)} className="inline-flex h-11 shrink-0 items-center gap-1 rounded-md px-2 text-paper hover:bg-raised">
                 <Plus size={14} />
+                Zoom in
               </button>
             </span>
           </>
@@ -1378,7 +1487,12 @@ export function Desk() {
         onChange={(event) => {
           const file = event.target.files?.[0];
           event.target.value = "";
-          if (file) requestOpen(file);
+          if (!file) return;
+          if (!paidRef.current) {
+            setStatus("Enter the passcode before opening a PDF.");
+            return;
+          }
+          requestOpen(file);
         }}
       />
       <input
@@ -1393,6 +1507,51 @@ export function Desk() {
           if (file) void loadMate(file);
         }}
       />
+
+      {gate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4">
+          <form
+            className="w-full max-w-sm rounded-md bg-paper p-5 text-ink"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitPasscode();
+            }}
+          >
+            <h2 className="text-2xl text-balance">Passcode</h2>
+            <p className="mt-2 text-sm text-pretty text-ink-soft">
+              Enter it before choosing a PDF. Once it is accepted, it stays on this computer.
+            </p>
+            <label className="mt-4 block text-sm" htmlFor="quire-passcode">
+              Passcode
+            </label>
+            <input
+              id="quire-passcode"
+              value={passInput}
+              onChange={(event) => {
+                setPassInput(event.target.value);
+                setPassError("");
+              }}
+              autoFocus
+              autoComplete="off"
+              spellCheck={false}
+              className="mt-1 h-11 w-full rounded-md border border-line-dark bg-raised px-3 text-sm text-paper outline-none focus:border-brass"
+            />
+            {passError && (
+              <p className="mt-3 text-sm" role="alert">
+                {passError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={closeGate} className="h-11 rounded-md px-4 text-sm text-ink">
+                Not now
+              </button>
+              <button type="submit" className="h-11 rounded-md bg-brass px-4 text-sm text-paper">
+                Unlock
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {pending && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4">

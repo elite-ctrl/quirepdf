@@ -1,4 +1,4 @@
-import type { Mark, Pass } from "@/lib/marks";
+import type { Mark } from "@/lib/marks";
 import type { PdfDoc } from "@/lib/pdf-client";
 import { capChanges, marksForPage, wordsInRun, type PlacedWord } from "@/lib/text-diff";
 
@@ -28,20 +28,20 @@ async function pageWords(pdf: PdfDoc, pageNumber: number): Promise<PlacedWord[]>
  * This file is the later copy. Compare is the earlier copy.
  * Inserted and replaced text is marked on the later copy. Deleted text becomes a callout there.
  */
-export async function compareDocuments(earlier: PdfDoc, later: PdfDoc, pass: Pass) {
+export async function compareDocuments(earlier: PdfDoc, later: PdfDoc) {
   const shared = Math.min(earlier.numPages, later.numPages);
   const marks: Mark[] = [];
   for (let page = 1; page <= shared; page += 1) {
     const before = await pageWords(earlier, page);
     const after = await pageWords(later, page);
-    marks.push(...marksForPage(before, after, page, pass));
+    marks.push(...marksForPage(before, after, page));
     if (marks.length >= 400) return capChanges(marks);
     await new Promise((resolve) => setTimeout(resolve, 0));
   }
   for (let page = shared + 1; page <= later.numPages; page += 1) {
     const after = await pageWords(later, page);
     if (!after.length) continue;
-    marks.push(...marksForPage([], after, page, pass));
+    marks.push(...marksForPage([], after, page));
     if (marks.length >= 400) return capChanges(marks);
   }
   if (earlier.numPages > later.numPages && later.numPages > 0) {
@@ -53,7 +53,7 @@ export async function compareDocuments(earlier: PdfDoc, later: PdfDoc, pass: Pas
     if (removed.length) {
       const tail = await pageWords(later, later.numPages);
       const anchor = tail.at(-1)?.quad ?? null;
-      const mark = marksForPage(removed, [], later.numPages, pass)[0];
+      const mark = marksForPage(removed, [], later.numPages)[0];
       if (mark?.kind === "callout") {
         marks.push({
           ...mark,

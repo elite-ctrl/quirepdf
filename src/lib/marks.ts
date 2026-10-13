@@ -52,11 +52,7 @@ export const INK_RGB: Record<InkId, [number, number, number]> = {
   crimson: [140 / 255, 47 / 255, 47 / 255],
 };
 
-const HEADER = /^\[(First read|Second read|P[12]) · (Query|Style|Term|Number|Cross-ref|Note)\]\n?/;
-
-export function readName(pass: Pass): string {
-  return pass === 1 ? "First read" : "Second read";
-}
+const HEADER = /^\[(?:(First read|Second read|P[12]) · )?(Query|Style|Term|Number|Cross-ref|Note)\]\n?/;
 
 export function kindName(kind: Kind): string {
   return KINDS.find((item) => item.id === kind)?.name ?? "Highlight";
@@ -67,14 +63,14 @@ export function labelName(label: LabelId): string {
 }
 
 export function formatContents(mark: Mark): string {
-  const head = `[${readName(mark.pass)} · ${labelName(mark.label)}]`;
+  const head = `[${labelName(mark.label)}]`;
   const note = mark.note.trim();
   return note ? `${head}\n${note}` : head;
 }
 
 export function parseNote(contents: string): { pass: Pass; label: LabelId; note: string } {
   const match = contents.match(HEADER);
-  if (!match) return { pass: 1, label: "note", note: contents.trim() };
+  if (!match || !match[2]) return { pass: 1, label: "note", note: contents.trim() };
   const label = LABELS.find((item) => item.name === match[2])?.id ?? "note";
   const pass: Pass = match[1] === "Second read" || match[1] === "P2" ? 2 : 1;
   return {
