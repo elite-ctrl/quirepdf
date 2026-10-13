@@ -24,9 +24,11 @@ await rm(resolve(out, "portable"), { recursive: true });
 
 await cp(resolve(root, "portable/serve.ps1"), resolve(out, "serve.ps1"));
 await cp(resolve(root, "portable/register.ps1"), resolve(out, "register.ps1"));
-await cp(resolve(root, "portable/Start Quire.bat"), resolve(out, "Start Quire.bat"));
-await cp(resolve(root, "portable/Use Quire for PDFs.bat"), resolve(out, "Use Quire for PDFs.bat"));
-for (const name of ["Start Quire.bat", "Use Quire for PDFs.bat"]) {
+await cp(resolve(root, "portable/install.ps1"), resolve(out, "install.ps1"));
+await cp(resolve(root, "portable/uninstall.ps1"), resolve(out, "uninstall.ps1"));
+const bats = ["Start Quire.bat", "Use Quire for PDFs.bat", "Install Quire.bat", "Uninstall Quire.bat"];
+for (const name of bats) await cp(resolve(root, "portable", name), resolve(out, name));
+for (const name of bats) {
   const batPath = resolve(out, name);
   const bat = await readFile(batPath);
   await writeFile(batPath, bat.toString("utf8").replace(/\r?\n/g, "\r\n"));

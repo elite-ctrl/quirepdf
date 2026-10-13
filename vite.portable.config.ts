@@ -8,7 +8,10 @@ export default defineConfig({
   base: "./",
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { "@": resolve(import.meta.dirname, "src") },
+    alias: [
+      { find: "@/lib/usage.server", replacement: resolve(import.meta.dirname, "portable/usage-stub.ts") },
+      { find: "@", replacement: resolve(import.meta.dirname, "src") },
+    ],
   },
   build: {
     outDir: "dist-portable",

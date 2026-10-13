@@ -1,11 +1,13 @@
-Quire for Windows
+Install Quire for Windows
 
-1. Unzip this folder anywhere. A USB stick is fine. Nothing else is installed.
-2. Double-click "Use Quire for PDFs.bat" once.
+1. Unzip this folder.
+2. Double-click "Install Quire.bat".
 3. When Windows asks, allow Quire to open PDF files.
-4. After that, double-click any PDF. It opens in Quire.
-5. You can also double-click "Start Quire.bat" when you are not opening a file.
+4. Quire is then in the Start menu and on the desktop.
+5. Double-click any PDF. It opens in Quire.
 6. Leave the black window open while you work. Close it when you are finished.
+
+To remove Quire, use Start menu "Uninstall Quire", or Windows Settings, Apps.
 
 The first PDF on a new computer still needs your passcode. This computer remembers it after that.
 Your PDFs and marks stay on this computer. Nothing is uploaded.

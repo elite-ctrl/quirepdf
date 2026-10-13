@@ -24,7 +24,7 @@ export const noteUnlock = createServerFn({ method: "POST" })
     };
   })
   .handler(async ({ data }): Promise<{ ok: boolean }> => {
-    const { recordUnlock } = await import("./usage.server");
+    const { recordUnlock } = await import("@/lib/usage.server");
     return recordUnlock(data);
   });
 
@@ -35,6 +35,6 @@ export const loadUsage = createServerFn({ method: "POST" })
     return { owner: typeof owner === "string" ? owner.slice(0, 80) : "" };
   })
   .handler(async ({ data }): Promise<UsageReport> => {
-    const { reportUsage } = await import("./usage.server");
+    const { reportUsage } = await import("@/lib/usage.server");
     return reportUsage(data.owner);
   });
