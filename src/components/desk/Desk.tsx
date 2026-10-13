@@ -3,12 +3,12 @@ import { useEffect, useRef, useState, type ReactNode, type RefObject } from "rea
 import {
   ArrowUpRight,
   BookOpen,
-  Columns2,
   FileDown,
   FileText,
   Files,
   GitCompare,
   Highlighter,
+  Languages,
   MessageSquare,
   Minus,
   MousePointer2,
@@ -35,6 +35,7 @@ import {
   type Tool,
 } from "@/lib/marks";
 import { compareDocuments } from "@/lib/compare-pdf";
+import { checkBilingual, type PairCheck } from "@/lib/bilingual-check";
 import { comparisonResultsPdf, markedPagesPdf } from "@/lib/embed-marks";
 import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@/lib/pdf-client";
 import { buildSamplePdf } from "@/lib/sample-pdf";
@@ -43,7 +44,6 @@ import { fetchLaunchedPdf } from "@/lib/launch-pdf";
 import { tryPasscode, unlockStored } from "@/lib/passcode";
 import { notePasscode } from "@/lib/report";
 import { Usage } from "@/components/desk/Usage";
-import { checkBilingual, type PairCheck } from "@/lib/bilingual-check";
 
 const TOOLS: { id: Tool; name: string; hint: string; icon: typeof MousePointer2 }[] = [
   { id: "select", name: "Select", hint: "Select marks (V)", icon: MousePointer2 },
@@ -54,32 +54,12 @@ const TOOLS: { id: Tool; name: string; hint: string; icon: typeof MousePointer2 
   { id: "arrow", name: "Arrow", hint: "Arrow (A). Drag. The head is where you let go.", icon: ArrowUpRight },
 ];
 
-type ViewMode = "single" | "facing" | "halves";
-
 type MateDoc = {
   pdf: PdfDoc;
   name: string;
   numPages: number;
   baseWidth: number;
 };
-
-function pageSides(count: number, mode: Exclude<ViewMode, "single">) {
-  const left: number[] = [];
-  const right: number[] = [];
-  if (mode === "facing") {
-    for (let number = 1; number <= count; number += 1) {
-      if (number % 2 === 1) left.push(number);
-      else right.push(number);
-    }
-  } else {
-    const mid = Math.ceil(count / 2);
-    for (let number = 1; number <= count; number += 1) {
-      if (number <= mid) left.push(number);
-      else right.push(number);
-    }
-  }
-  return { left, right };
-}
 
 function nearestPage(el: HTMLElement) {
   const rootTop = el.getBoundingClientRect().top + 32;
@@ -103,7 +83,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [baseWidth, setBaseWidth] = useState(595);
   const [scale, setScale] = useState(1);
   const [zoomMode, setZoomMode] = useState<"fit" | "manual">("fit");
-  const [viewMode, setViewMode] = useState<ViewMode>("single");
   const [mate, setMate] = useState<MateDoc | null>(null);
   const [mateScale, setMateScale] = useState(1);
   const [linked, setLinked] = useState(true);
@@ -124,6 +103,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "changes" | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [pairKind, setPairKind] = useState<"compare" | "bilingual" | null>(null);
+  const [figureReport, setFigureReport] = useState<PairCheck[] | null>(null);
+  const [figureBusy, setFigureBusy] = useState(false);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [sessionKey, setSessionKey] = useState<string | null>(null);
@@ -133,11 +115,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [staySelection, setStaySelection] = useState(false);
   const [paid, setPaid] = useState(studio);
   const [usageOpen, setUsageOpen] = useState(false);
-  const [gate, setGate] = useState<"open" | "compare" | "changes" | "pdf" | "sheet" | "changes-pdf" | "unlock" | null>(null);
+  const [gate, setGate] = useState<"open" | "compare" | "bilingual" | "changes" | "pdf" | "sheet" | "changes-pdf" | "unlock" | null>(null);
   const [passInput, setPassInput] = useState("");
   const [passError, setPassError] = useState("");
-  const [figureReport, setFigureReport] = useState<PairCheck[] | null>(null);
-  const [figureBusy, setFigureBusy] = useState(false);
   const [heldName, setHeldName] = useState("");
   const heldLaunch = useRef<{ name: string; bytes: Uint8Array } | null>(null);
 
@@ -161,6 +141,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const activeIdRef = useRef<string | null>(null);
   const mateDocRef = useRef<MateDoc | null>(null);
   const mateTicket = useRef(0);
+  const mateIntent = useRef<"compare" | "bilingual">("compare");
   const openTicket = useRef(0);
   const gestureBase = useRef<Mark[] | null>(null);
   const scaleRef = useRef(scale);
@@ -221,16 +202,12 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   }, []);
 
   useEffect(() => {
-    setFigureReport(null);
-  }, [viewMode]);
-
-  useEffect(() => {
     if (window.innerWidth < 768) setRailOpen(false);
   }, []);
 
   useEffect(() => {
     if (zoomMode !== "fit" || !pdf) return;
-    const split = !!mate || viewMode !== "single";
+    const split = !!mate;
     const el = split ? leftScrollRef.current : singleScrollRef.current;
     const right = mate ? rightScrollRef.current : null;
     if (!el) return;
@@ -248,7 +225,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     observer.observe(el);
     if (right) observer.observe(right);
     return () => observer.disconnect();
-  }, [zoomMode, pdf, baseWidth, viewMode, mate]);
+  }, [zoomMode, pdf, baseWidth, mate]);
 
   useEffect(() => {
     if (!sessionKey || !fileName) return;
@@ -308,8 +285,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
 
   useEffect(() => {
     if (!pdf) return;
-    const split = !!mate || viewMode !== "single";
-    const panes = split
+    const panes = mate
       ? [
           { el: leftScrollRef.current, set: setPage },
           { el: rightScrollRef.current, set: setMatePage },
@@ -337,12 +313,10 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     return () => {
       for (const stop of stops) stop();
     };
-  }, [pdf, numPages, scale, viewMode, mate, mateScale]);
+  }, [pdf, numPages, scale, mate, mateScale]);
 
   useEffect(() => {
-    const split = !!mate || viewMode !== "single";
-    const lockScroll = viewMode !== "single" || (!!mate && linked);
-    if (!split || !lockScroll || !pdf) return;
+    if (!mate || !linked || !pdf) return;
     const left = leftScrollRef.current;
     const right = rightScrollRef.current;
     if (!left || !right) return;
@@ -372,7 +346,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       left.removeEventListener("scroll", onLeft);
       right.removeEventListener("scroll", onRight);
     };
-  }, [viewMode, pdf, numPages, scale, mate, mateScale, linked]);
+  }, [pdf, numPages, scale, mate, mateScale, linked]);
 
   function bumpHistory() {
     setHistoryTick((tick) => tick + 1);
@@ -799,12 +773,25 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     if (!current) return;
     mateDocRef.current = null;
     setMate(null);
+    setPairKind(null);
+    setFigureReport(null);
     void current.pdf.cleanup();
   }
 
   function closeMate() {
+    const bilingual = pairKind === "bilingual";
     dropMate();
-    setStatus("Compare closed. Marks are still on this file.");
+    setStatus(bilingual ? "Bilingual closed. Marks are still on this file." : "Compare closed. Marks are still on this file.");
+  }
+
+  function askSecond(kind: "compare" | "bilingual") {
+    mateIntent.current = kind;
+    if (!paidRef.current) {
+      setPassError("");
+      setGate(kind);
+      return;
+    }
+    mateFileRef.current?.click();
   }
 
   async function loadMate(file: File) {
@@ -825,15 +812,22 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       }
       const first = await next.getPage(1);
       const width = first.getViewport({ scale: 1 }).width;
+      const kind = mateIntent.current;
       const previous = mateDocRef.current;
       const opened: MateDoc = { pdf: next, name: file.name, numPages: next.numPages, baseWidth: width };
       mateDocRef.current = opened;
       setMate(opened);
+      setPairKind(kind);
+      setFigureReport(null);
       setMateScale(scaleRef.current);
       setLinked(true);
       setMatePage(1);
       if (previous) void previous.pdf.cleanup();
-      setStatus("Compare is open. Scrolling one side moves the other. Marks stay on this file.");
+      setStatus(
+        kind === "bilingual"
+          ? "Bilingual is open. This file is the source. The other file is the target."
+          : "Compare is open. Scrolling one side moves the other. Marks stay on this file.",
+      );
     } catch (err) {
       if (ticket === mateTicket.current) setError(messageFrom(err));
     } finally {
@@ -959,7 +953,10 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     }
     setStatus("Passcode accepted. Choose the PDF.");
     if (openFile || next === "open") fileRef.current?.click();
-    else if (next === "compare") mateFileRef.current?.click();
+    else if (next === "compare" || next === "bilingual") {
+      mateIntent.current = next;
+      mateFileRef.current?.click();
+    }
     else if (next === "changes") void findChanges();
     else if (next === "pdf") void exportPdf();
     else if (next === "sheet") exportSheet();
@@ -967,17 +964,28 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   }
 
   async function checkFigures() {
-    const doc = pdfRef.current;
-    if (!doc || viewMode === "single" || figureBusy) return;
+    const source = pdfRef.current;
+    const target = mateDocRef.current?.pdf;
+    if (!source || !target || pairKind !== "bilingual" || figureBusy) return;
     setFigureBusy(true);
     setError("");
     try {
-      const report = await checkBilingual(doc, viewMode === "halves" ? "halves" : "facing");
+      const report = await checkBilingual(source, target);
       setFigureReport(report);
       const missed = report.filter(
-        (pair) => pair.datesLeft.length || pair.datesRight.length || pair.figuresLeft.length || pair.figuresRight.length,
+        (pair) =>
+          pair.sourcePage === null ||
+          pair.targetPage === null ||
+          pair.datesSource.length ||
+          pair.datesTarget.length ||
+          pair.figuresSource.length ||
+          pair.figuresTarget.length,
       ).length;
-      setStatus(missed ? `${missed} page ${missed === 1 ? "pair differs" : "pairs differ"}.` : "Figures and dates match.");
+      setStatus(
+        missed
+          ? `${missed} source and target ${missed === 1 ? "page differs" : "pages differ"}.`
+          : "Source and target figures and dates match.",
+      );
     } catch {
       setError("Figures and dates could not be checked.");
     } finally {
@@ -989,9 +997,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const canRedo = redoRef.current.length > 0;
   void historyTick;
   const pair = !!pdf && !!mate;
-  const bilingual = !!pdf && !mate && viewMode !== "single";
-  const sides = bilingual ? pageSides(numPages, viewMode === "halves" ? "halves" : "facing") : null;
-  const splitChrome = pair || viewMode !== "single";
 
   function renderPages(doc: PdfDoc, numbers: number[], side: "work" | "mate", pageScale: number) {
     const prefix = side === "work" ? "a" : "b";
@@ -1240,66 +1245,29 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
               </span>
             )}
             <span className="mx-1 h-6 w-px shrink-0 bg-line-dark" />
-            {!mate && (
-              <>
-                <button
-                  type="button"
-                  aria-pressed={viewMode === "single"}
-                  onClick={() => setViewMode("single")}
-                  className={`h-11 shrink-0 rounded-md px-3 text-sm ${viewMode === "single" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
-                >
-                  Single
-                </button>
-                <button
-                  type="button"
-                  title="Odd pages beside even pages. Scrolling one side moves the other."
-                  aria-pressed={viewMode === "facing"}
-                  onClick={() => setViewMode("facing")}
-                  className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm ${viewMode === "facing" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
-                >
-                  <Columns2 size={16} strokeWidth={1.75} />
-                  Facing
-                </button>
-                <button
-                  type="button"
-                  title="First half beside the second half. Scrolling one side moves the other."
-                  aria-pressed={viewMode === "halves"}
-                  onClick={() => setViewMode("halves")}
-                  className={`h-11 shrink-0 rounded-md px-3 text-sm ${viewMode === "halves" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
-                >
-                  Halves
-                </button>
-                {viewMode !== "single" && (
-                  <button
-                    type="button"
-                    title="Check figures and dates on the two sides. Dates match by day. Amounts ignore currency signs."
-                    disabled={figureBusy}
-                    onClick={() => void checkFigures()}
-                    className="h-11 shrink-0 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
-                  >
-                    {figureBusy ? "Checking…" : "Figures"}
-                  </button>
-                )}
-              </>
-            )}
             <button
               type="button"
               title="Compare. Open a second PDF beside this one. Scrolling stays linked. Marks stay on this file."
               aria-label="Compare"
-              aria-pressed={!!mate}
+              aria-pressed={pairKind === "compare"}
               disabled={mateBusy}
-              onClick={() => {
-                if (!paidRef.current) {
-                  setPassError("");
-                  setGate("compare");
-                  return;
-                }
-                mateFileRef.current?.click();
-              }}
-              className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40 ${mate ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+              onClick={() => askSecond("compare")}
+              className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40 ${pairKind === "compare" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
             >
               <Files size={16} strokeWidth={1.75} />
-              <span>{mateBusy ? "Opening…" : "Compare"}</span>
+              <span>{mateBusy && mateIntent.current === "compare" ? "Opening…" : "Compare"}</span>
+            </button>
+            <button
+              type="button"
+              title="Bilingual. Open the other language beside this file. This file is the source."
+              aria-label="Bilingual"
+              aria-pressed={pairKind === "bilingual"}
+              disabled={mateBusy}
+              onClick={() => askSecond("bilingual")}
+              className={`inline-flex h-11 shrink-0 items-center gap-2 rounded-md px-3 text-sm disabled:opacity-40 ${pairKind === "bilingual" ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+            >
+              <Languages size={16} strokeWidth={1.75} />
+              <span>{mateBusy && mateIntent.current === "bilingual" ? "Opening…" : "Bilingual"}</span>
             </button>
           </div>
         )}
@@ -1400,7 +1368,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                       ? "Studio copy. No passcode while the desk is being changed. The customer version still asks for one."
                       : heldName
                         ? `${heldName} is waiting. Enter the passcode to open it.`
-                        : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted.`}
+                        : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Bilingual opens the other language, then figures and dates can be checked.`}
                   </p>
                   {error && (
                     <p className="mt-4 text-sm text-paper" role="alert">
@@ -1412,7 +1380,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
             )}
           </div>
         )}
-        {pdf && !pair && viewMode === "single" && (
+        {pdf && !pair && (
           <div ref={singleScrollRef} className="min-w-0 flex-1 overflow-auto">
             <div className="px-3 py-6 sm:px-8">
               {marks.length === 0 && (
@@ -1430,64 +1398,76 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
             </div>
           </div>
         )}
-        {pdf && sides && (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
-            <Pane title={viewMode === "facing" ? "Odd pages" : "First half"} scrollerRef={leftScrollRef}>
-              {sides.left.length ? renderPages(pdf, sides.left, "work", scale) : <EmptySide />}
-            </Pane>
-            <Pane title={viewMode === "facing" ? "Even pages" : "Second half"} scrollerRef={rightScrollRef}>
-              {sides.right.length ? renderPages(pdf, sides.right, "work", scale) : <EmptySide />}
-            </Pane>
-          </div>
-        )}
         {pdf && mate && (
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
-            <Pane title={fileName ?? "This file"} scrollerRef={leftScrollRef}>
-              {marks.length === 0 && (
-                <p className="mb-4 text-center text-sm text-muted">
-                  Select a line on this file, in the colour chosen above.
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {pairKind === "bilingual" && (
+              <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line-dark px-3 py-2">
+                <p className="min-w-0 flex-1 text-sm text-pretty text-muted">
+                  Source, then target. Figures and dates are checked on the same page number.
                 </p>
-              )}
-              {renderPages(pdf, workNumbers, "work", scale)}
-            </Pane>
-            <Pane
-              title={mate.name}
-              scrollerRef={rightScrollRef}
-              extra={
-                <>
-                  <button
-                    type="button"
-                    disabled={comparing}
-                    title="Mark how this file differs from Compare. This file is the later copy. Added text is highlighted. Deleted text becomes a callout."
-                    onClick={() => void findChanges()}
-                    className="h-11 shrink-0 rounded-md bg-brass px-3 text-sm text-paper disabled:opacity-40"
-                  >
-                    {comparing ? "Comparing…" : "Changes"}
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={linked}
-                    title={linked ? "Scrolling is linked. Click to move each file on its own." : "Scrolling is independent. Click to link the two files again."}
-                    onClick={() => setLinked((value) => !value)}
-                    className={`h-11 shrink-0 rounded-md px-3 text-sm ${linked ? "bg-brass text-paper" : "bg-raised text-paper"}`}
-                  >
-                    {linked ? "Linked" : "Free"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={closeMate}
-                    className="h-11 shrink-0 rounded-md bg-raised px-3 text-sm text-paper"
-                  >
-                    Close
-                  </button>
-                </>
-              }
-            >
-              <p className="mb-4 text-center text-sm text-muted">
-                Compare. Marks stay on the other file. Changes treats this file as the later copy.
-              </p>
-              {renderPages(mate.pdf, Array.from({ length: mate.numPages }, (_, index) => index + 1), "mate", mateScale)}
-            </Pane>
+                <button
+                  type="button"
+                  title="Check figures and dates. A date matches by the day. An amount matches without the currency sign."
+                  disabled={figureBusy}
+                  onClick={() => void checkFigures()}
+                  className="h-11 shrink-0 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40"
+                >
+                  {figureBusy ? "Checking…" : "Figures and dates"}
+                </button>
+              </div>
+            )}
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+              <Pane title={pairKind === "bilingual" ? `Source · ${fileName ?? "This file"}` : (fileName ?? "This file")} scrollerRef={leftScrollRef}>
+                {marks.length === 0 && (
+                  <p className="mb-4 text-center text-sm text-muted">
+                    Select a line on this file, in the colour chosen above.
+                  </p>
+                )}
+                {renderPages(pdf, workNumbers, "work", scale)}
+              </Pane>
+              <Pane
+                title={pairKind === "bilingual" ? `Target · ${mate.name}` : mate.name}
+                scrollerRef={rightScrollRef}
+                extra={
+                  <>
+                    {pairKind !== "bilingual" && (
+                      <button
+                        type="button"
+                        disabled={comparing}
+                        title="Mark how this file differs from Compare. This file is the later copy. Added text is highlighted. Deleted text becomes a callout."
+                        onClick={() => void findChanges()}
+                        className="h-11 shrink-0 rounded-md bg-brass px-3 text-sm text-paper disabled:opacity-40"
+                      >
+                        {comparing ? "Comparing…" : "Changes"}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      aria-pressed={linked}
+                      title={linked ? "Scrolling is linked. Click to move each file on its own." : "Scrolling is independent. Click to link the two files again."}
+                      onClick={() => setLinked((value) => !value)}
+                      className={`h-11 shrink-0 rounded-md px-3 text-sm ${linked ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+                    >
+                      {linked ? "Linked" : "Free"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={closeMate}
+                      className="h-11 shrink-0 rounded-md bg-raised px-3 text-sm text-paper"
+                    >
+                      Close
+                    </button>
+                  </>
+                }
+              >
+                <p className="mb-4 text-center text-sm text-muted">
+                  {pairKind === "bilingual"
+                    ? "Bilingual. Marks stay on the source."
+                    : "Compare. Marks stay on the other file. Changes treats this file as the later copy."}
+                </p>
+                {renderPages(mate.pdf, Array.from({ length: mate.numPages }, (_, index) => index + 1), "mate", mateScale)}
+              </Pane>
+            </div>
           </div>
         )}
         {pdf && railOpen && (
@@ -1514,12 +1494,12 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         {pdf && (
           <>
             <label className="inline-flex items-center gap-2 tabular-nums">
-              {splitChrome ? "Left" : "Page"}
+              {pair ? (pairKind === "bilingual" ? "Source" : "Left") : "Page"}
               <input
-                key={`${viewMode}-${pair ? "pair" : "one"}-${page}`}
+                key={`${pairKind ?? "one"}-${page}`}
                 defaultValue={page}
                 inputMode="numeric"
-                aria-label={splitChrome ? "Left page" : "Page number"}
+                aria-label={pair ? (pairKind === "bilingual" ? "Source page" : "Left page") : "Page number"}
                 onBlur={(event) => jumpTo("a", event.target.value)}
                 onKeyDown={(event) => {
                   if (event.key === "Enter") {
@@ -1529,20 +1509,20 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                 }}
                 className="h-11 w-14 rounded-md bg-raised text-center text-paper"
               />
-              {splitChrome ? null : `/ ${numPages}`}
+              {pair ? null : `/ ${numPages}`}
             </label>
-            {splitChrome && (
+            {pair && (
               <label className="inline-flex items-center gap-2 tabular-nums">
-                Right
+                {pairKind === "bilingual" ? "Target" : "Right"}
                 <input
-                  key={`${viewMode}-${pair ? "pair" : "one"}-mate-${matePage}`}
+                  key={`${pairKind}-mate-${matePage}`}
                   defaultValue={matePage || ""}
                   inputMode="numeric"
-                  aria-label="Right page"
-                  onBlur={(event) => jumpTo(pair ? "b" : "a", event.target.value)}
+                  aria-label={pairKind === "bilingual" ? "Target page" : "Right page"}
+                  onBlur={(event) => jumpTo("b", event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
-                      jumpTo(pair ? "b" : "a", (event.target as HTMLInputElement).value);
+                      jumpTo("b", (event.target as HTMLInputElement).value);
                       (event.target as HTMLInputElement).blur();
                     }
                   }}
@@ -1658,30 +1638,28 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
           <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-md bg-paper p-5 text-ink">
             <h2 className="text-2xl text-balance">Figures and dates</h2>
             <p className="mt-2 text-sm text-pretty text-ink-soft">
-              Each left page is checked against the page beside it. A regex reads dates as days, and figures without currency signs or thousands separators.
+              The source page is checked against the target page with the same number. A date matches by the day. An amount matches without the currency sign or the thousands separators.
             </p>
             <div className="mt-4 min-h-0 flex-1 overflow-auto">
-              {figureReport.map((pair) => {
-                const clean =
-                  pair.right !== null &&
-                  !pair.datesLeft.length &&
-                  !pair.datesRight.length &&
-                  !pair.figuresLeft.length &&
-                  !pair.figuresRight.length;
-                return (
-                  <section key={`${pair.left}-${pair.right ?? "none"}`} className="mt-4 border-t border-line pt-3 first:mt-0 first:border-t-0 first:pt-0">
+              {figureReport.every((pair) => !pairDiffers(pair)) ? (
+                <p className="text-sm text-ink-soft">Figures and dates match.</p>
+              ) : (
+                figureReport.filter(pairDiffers).map((pair) => (
+                  <section key={pair.page} className="mt-4 border-t border-line pt-3 first:mt-0 first:border-t-0 first:pt-0">
                     <h3 className="text-base">
-                      {pair.right ? `Pages ${pair.left} and ${pair.right}` : `Page ${pair.left}`}
+                      {pair.sourcePage && pair.targetPage
+                        ? `Source page ${pair.sourcePage} and target page ${pair.targetPage}`
+                        : pair.sourcePage
+                          ? `Source page ${pair.sourcePage}`
+                          : `Target page ${pair.targetPage}`}
                     </h3>
-                    {!pair.right && <p className="mt-1 text-sm text-ink-soft">No page beside this one.</p>}
-                    {clean && <p className="mt-1 text-sm text-ink-soft">Figures and dates match.</p>}
-                    <GapList title={`Page ${pair.left} only`} dates={pair.datesLeft} figures={pair.figuresLeft} />
-                    {pair.right !== null && (
-                      <GapList title={`Page ${pair.right} only`} dates={pair.datesRight} figures={pair.figuresRight} />
-                    )}
+                    {pair.sourcePage === null && <p className="mt-1 text-sm text-ink-soft">No source page for this number.</p>}
+                    {pair.targetPage === null && <p className="mt-1 text-sm text-ink-soft">No target page for this number.</p>}
+                    <GapList title="Only on the source" dates={pair.datesSource} figures={pair.figuresSource} />
+                    <GapList title="Only on the target" dates={pair.datesTarget} figures={pair.figuresTarget} />
                   </section>
-                );
-              })}
+                ))
+              )}
             </div>
             <div className="mt-5 flex justify-end">
               <button type="button" onClick={() => setFigureReport(null)} className="h-11 rounded-md bg-brass px-4 text-sm text-paper">
@@ -1718,14 +1696,25 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   );
 }
 
+function pairDiffers(pair: PairCheck) {
+  return (
+    pair.sourcePage === null ||
+    pair.targetPage === null ||
+    pair.datesSource.length > 0 ||
+    pair.datesTarget.length > 0 ||
+    pair.figuresSource.length > 0 ||
+    pair.figuresTarget.length > 0
+  );
+}
+
 function GapList({
   title,
   dates,
   figures,
 }: {
   title: string;
-  dates: PairCheck["datesLeft"];
-  figures: PairCheck["figuresLeft"];
+  dates: PairCheck["datesSource"];
+  figures: PairCheck["figuresSource"];
 }) {
   if (!dates.length && !figures.length) return null;
   return (
@@ -1769,10 +1758,6 @@ function Pane({
       </div>
     </section>
   );
-}
-
-function EmptySide() {
-  return <p className="py-6 text-sm text-muted">No page on this side.</p>;
 }
 
 function messageFrom(error: unknown): string {

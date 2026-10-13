@@ -1,0 +1,55 @@
+#!/bin/bash
+# Opens Quire in Terminal so closing that window stops it. macOS bash 3.2.
+set -u
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+RESOURCES="$(cd "$(dirname "$0")/../Resources" && pwd)"
+
+if [ "${QUIRE_IN_TERMINAL:-}" != "1" ]; then
+  tmp="$(mktemp /tmp/quire-args.XXXXXX)"
+  if [ "$#" -gt 0 ]; then
+    printf '%s\n' "$@" | base64 > "$tmp"
+  else
+    : > "$tmp"
+  fi
+  /usr/bin/osascript - "$SELF" "$tmp" <<'APPLESCRIPT'
+on run argv
+  set exe to item 1 of argv
+  set argfile to item 2 of argv
+  tell application "Terminal"
+    activate
+    do script "export QUIRE_IN_TERMINAL=1 QUIRE_ARGS_FILE=" & quoted form of argfile & "; exec " & quoted form of exe
+  end tell
+end run
+APPLESCRIPT
+  exit 0
+fi
+
+printf '\033]0;Quire\007'
+args_file=""
+if [ -n "${QUIRE_ARGS_FILE:-}" ] && [ -f "$QUIRE_ARGS_FILE" ]; then
+  if [ -s "$QUIRE_ARGS_FILE" ]; then
+    args_file="$(mktemp /tmp/quire-decoded.XXXXXX)"
+    base64 -D < "$QUIRE_ARGS_FILE" > "$args_file" 2>/dev/null || base64 -d < "$QUIRE_ARGS_FILE" > "$args_file"
+  fi
+  rm -f "$QUIRE_ARGS_FILE"
+fi
+
+export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
+PYTHON=""
+if command -v python3 >/dev/null 2>&1; then
+  PYTHON="$(command -v python3)"
+fi
+if [ -z "$PYTHON" ]; then
+  /usr/bin/osascript -e 'display dialog "Quire needs Python 3. Install it from python.org, then open Quire again." buttons {"OK"} with title "Quire"'
+  exit 1
+fi
+
+set --
+if [ -n "$args_file" ] && [ -f "$args_file" ]; then
+  while IFS= read -r line; do
+    [ -n "$line" ] && set -- "$@" "$line"
+  done < "$args_file"
+  rm -f "$args_file"
+fi
+
+exec "$PYTHON" "$RESOURCES/serve.py" --root "$RESOURCES/www" --port-file "$RESOURCES/quire.port" "$@"

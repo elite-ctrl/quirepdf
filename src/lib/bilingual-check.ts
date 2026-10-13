@@ -3,12 +3,13 @@ import { pagePlainText, type PdfDoc } from "@/lib/pdf-client";
 export type SideGap = { raw: string; extra: number };
 
 export type PairCheck = {
-  left: number;
-  right: number | null;
-  datesLeft: SideGap[];
-  datesRight: SideGap[];
-  figuresLeft: SideGap[];
-  figuresRight: SideGap[];
+  page: number;
+  sourcePage: number | null;
+  targetPage: number | null;
+  datesSource: SideGap[];
+  datesTarget: SideGap[];
+  figuresSource: SideGap[];
+  figuresTarget: SideGap[];
 };
 
 type Token = { kind: "date" | "figure"; key: string; raw: string };
@@ -145,7 +146,7 @@ export function tokensIn(source: string): Token[] {
   return tokens;
 }
 
-function gaps(left: Token[], right: Token[], kind: Token["kind"]): { left: SideGap[]; right: SideGap[] } {
+function gaps(source: Token[], target: Token[], kind: Token["kind"]): { source: SideGap[]; target: SideGap[] } {
   const tally = (list: Token[]) => {
     const map = new Map<string, { count: number; raw: string }>();
     for (const token of list) {
@@ -156,64 +157,58 @@ function gaps(left: Token[], right: Token[], kind: Token["kind"]): { left: SideG
     }
     return map;
   };
-  const a = tally(left);
-  const b = tally(right);
-  const only = (source: Map<string, { count: number; raw: string }>, other: Map<string, { count: number; raw: string }>) => {
+  const a = tally(source);
+  const b = tally(target);
+  const only = (from: Map<string, { count: number; raw: string }>, other: Map<string, { count: number; raw: string }>) => {
     const found: SideGap[] = [];
-    for (const [key, item] of source) {
+    for (const [key, item] of from) {
       const extra = item.count - (other.get(key)?.count ?? 0);
       if (extra > 0) found.push({ raw: item.raw, extra });
     }
     return found;
   };
-  return { left: only(a, b), right: only(b, a) };
+  return { source: only(a, b), target: only(b, a) };
 }
 
-export function pagePairs(count: number, mode: "facing" | "halves"): Array<[number, number | null]> {
-  if (mode === "facing") {
-    const pairs: Array<[number, number | null]> = [];
-    for (let page = 1; page <= count; page += 2) pairs.push([page, page + 1 <= count ? page + 1 : null]);
-    return pairs;
-  }
-  const mid = Math.ceil(count / 2);
-  const pairs: Array<[number, number | null]> = [];
-  for (let index = 0; index < mid; index += 1) {
-    const right = mid + index + 1;
-    pairs.push([index + 1, right <= count ? right : null]);
-  }
-  return pairs;
-}
-
-export function compareSides(leftText: string, rightText: string): Pick<PairCheck, "datesLeft" | "datesRight" | "figuresLeft" | "figuresRight"> {
-  const left = tokensIn(leftText);
-  const right = tokensIn(rightText);
-  const dates = gaps(left, right, "date");
-  const figures = gaps(left, right, "figure");
+export function compareSides(sourceText: string, targetText: string): Pick<PairCheck, "datesSource" | "datesTarget" | "figuresSource" | "figuresTarget"> {
+  const source = tokensIn(sourceText);
+  const target = tokensIn(targetText);
+  const dates = gaps(source, target, "date");
+  const figures = gaps(source, target, "figure");
   return {
-    datesLeft: dates.left,
-    datesRight: dates.right,
-    figuresLeft: figures.left,
-    figuresRight: figures.right,
+    datesSource: dates.source,
+    datesTarget: dates.target,
+    figuresSource: figures.source,
+    figuresTarget: figures.target,
   };
 }
 
-export async function checkBilingual(pdf: PdfDoc, mode: "facing" | "halves"): Promise<PairCheck[]> {
-  const pairs = pagePairs(pdf.numPages, mode);
-  const texts = new Map<number, string>();
-  const needed = new Set<number>();
-  for (const [left, right] of pairs) {
-    needed.add(left);
-    if (right) needed.add(right);
-  }
-  await Promise.all(
-    [...needed].map(async (page) => {
-      texts.set(page, await pagePlainText(pdf, page));
+const emptySide = {
+  datesSource: [],
+  datesTarget: [],
+  figuresSource: [],
+  figuresTarget: [],
+};
+
+export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<PairCheck[]> {
+  const count = Math.max(source.numPages, target.numPages);
+  const pages = Array.from({ length: count }, (_, index) => index + 1);
+  const sourceText = new Map<number, string>();
+  const targetText = new Map<number, string>();
+  await Promise.all([
+    ...pages.filter((page) => page <= source.numPages).map(async (page) => {
+      sourceText.set(page, await pagePlainText(source, page));
     }),
-  );
-  return pairs.map(([left, right]) => {
-    if (!right) {
-      return { left, right, datesLeft: [], datesRight: [], figuresLeft: [], figuresRight: [] };
+    ...pages.filter((page) => page <= target.numPages).map(async (page) => {
+      targetText.set(page, await pagePlainText(target, page));
+    }),
+  ]);
+  return pages.map((page) => {
+    const sourcePage = page <= source.numPages ? page : null;
+    const targetPage = page <= target.numPages ? page : null;
+    if (sourcePage === null || targetPage === null) {
+      return { page, sourcePage, targetPage, ...emptySide };
     }
-    return { left, right, ...compareSides(texts.get(left) ?? "", texts.get(right) ?? "") };
+    return { page, sourcePage, targetPage, ...compareSides(sourceText.get(page) ?? "", targetText.get(page) ?? "") };
   });
 }
