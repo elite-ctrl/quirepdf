@@ -10,6 +10,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@/lib/usage.server", replacement: resolve(import.meta.dirname, "portable/usage-stub.ts") },
+      { find: "@/lib/usage", replacement: resolve(import.meta.dirname, "portable/usage-client.ts") },
       { find: "@", replacement: resolve(import.meta.dirname, "src") },
     ],
   },

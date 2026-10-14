@@ -41,7 +41,7 @@ export function agentLabel(): string {
 export function notePasscode(code: string) {
   const browser = browserKey();
   const agent = agentLabel();
-  void import("./usage")
+  void import("@/lib/usage")
     .then(({ noteUnlock }) => noteUnlock({ data: { code, browser, agent } }))
     .catch(() => undefined);
 }

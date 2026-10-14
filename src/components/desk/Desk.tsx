@@ -1468,7 +1468,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                         <BookOpen size={16} strokeWidth={1.75} />
                         Try the sample
                       </button>
-                      {studio ? (
+                      {portable ? null : studio ? (
                         <Link
                           to="/"
                           className="quire-file inline-flex h-11 items-center rounded-md bg-raised px-4 text-sm text-paper"

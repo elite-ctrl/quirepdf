@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quire",
-  "version": "1.0.1",
+  "version": "1.0.3",
   "description": "Proofread a PDF in Chrome. The file stays on this computer.",
   "minimum_chrome_version": "151",
   "action": {
