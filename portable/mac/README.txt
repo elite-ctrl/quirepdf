@@ -12,6 +12,7 @@ The first time, macOS may say the app is from an unidentified developer. Right-c
 To remove Quire, double-click Uninstall Quire in your Applications folder.
 
 The first PDF on a new computer still needs your passcode. This computer remembers it after that.
+The desk matches the web version: Compare, Bilingual, figures and dates, bold and italic, and Join lines.
 Your PDFs and marks stay on this computer. Nothing is uploaded.
 Open the same PDF again on this computer and the marks come back.
 

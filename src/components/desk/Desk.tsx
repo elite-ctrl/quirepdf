@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { PdfPage, type ShapePlace } from "@/components/desk/PdfPage";
 import { Rail } from "@/components/desk/Rail";
+import { joinCopiedLines } from "@/lib/copy-text";
 import { selectionOnPage, type ViewportLike } from "@/lib/geometry";
 import { downloadBlob, marksToMarkdown, safeStem } from "@/lib/markdown";
 import {
@@ -35,8 +36,8 @@ import {
   type Tool,
 } from "@/lib/marks";
 import { compareDocuments } from "@/lib/compare-pdf";
-import { checkBilingual, type PairCheck } from "@/lib/bilingual-check";
-import { comparisonResultsPdf, markedPagesPdf } from "@/lib/embed-marks";
+import { checkBilingual, marksOnTarget, type PairCheck } from "@/lib/bilingual-check";
+import { comparisonResultsPdf, embedMarks, markedPagesPdf } from "@/lib/embed-marks";
 import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@/lib/pdf-client";
 import { buildSamplePdf } from "@/lib/sample-pdf";
 import { fingerprint, loadSession, saveSession } from "@/lib/session";
@@ -59,6 +60,7 @@ type MateDoc = {
   name: string;
   numPages: number;
   baseWidth: number;
+  bytes: Uint8Array;
 };
 
 function nearestPage(el: HTMLElement) {
@@ -101,11 +103,12 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [hitIndex, setHitIndex] = useState(0);
   const [searching, setSearching] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [exporting, setExporting] = useState<"pdf" | "changes" | null>(null);
+  const [exporting, setExporting] = useState<"pdf" | "changes" | "target" | null>(null);
   const [comparing, setComparing] = useState(false);
   const [pairKind, setPairKind] = useState<"compare" | "bilingual" | null>(null);
   const [figureReport, setFigureReport] = useState<PairCheck[] | null>(null);
   const [figureBusy, setFigureBusy] = useState(false);
+  const [targetMarks, setTargetMarks] = useState<Mark[]>([]);
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [sessionKey, setSessionKey] = useState<string | null>(null);
@@ -113,6 +116,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [dragOver, setDragOver] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
   const [staySelection, setStaySelection] = useState(false);
+  const [joinLines, setJoinLines] = useState(false);
   const [paid, setPaid] = useState(studio);
   const [usageOpen, setUsageOpen] = useState(false);
   const [gate, setGate] = useState<"open" | "compare" | "bilingual" | "changes" | "pdf" | "sheet" | "changes-pdf" | "unlock" | null>(null);
@@ -140,6 +144,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const noteSnapshot = useRef<Mark[] | null>(null);
   const activeIdRef = useRef<string | null>(null);
   const mateDocRef = useRef<MateDoc | null>(null);
+  const targetMarksRef = useRef<Mark[]>([]);
   const mateTicket = useRef(0);
   const mateIntent = useRef<"compare" | "bilingual">("compare");
   const openTicket = useRef(0);
@@ -147,6 +152,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const scaleRef = useRef(scale);
   const earlierNameRef = useRef<string | null>(null);
   const stayRef = useRef(false);
+  const joinRef = useRef(false);
   const paidRef = useRef(studio);
   const applyRef = useRef<(kind: "highlight" | "underline" | "strikeout") => boolean>(() => false);
 
@@ -158,6 +164,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   mateDocRef.current = mate;
   scaleRef.current = scale;
   stayRef.current = staySelection;
+  joinRef.current = joinLines;
   paidRef.current = paid;
 
   useEffect(() => {
@@ -196,6 +203,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       const stored = localStorage.getItem("quire-stay-selection") === "1";
       stayRef.current = stored;
       setStaySelection(stored);
+      const join = localStorage.getItem("quire-join-lines") === "1";
+      joinRef.current = join;
+      setJoinLines(join);
     } catch {
       /* private browsing */
     }
@@ -482,6 +492,35 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     if (next === previous) return;
     applyLiveSelection(next);
   }
+
+  function toggleJoin() {
+    setJoinLines((value) => {
+      const next = !value;
+      joinRef.current = next;
+      try {
+        localStorage.setItem("quire-join-lines", next ? "1" : "0");
+      } catch {
+        /* private browsing */
+      }
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    function onCopy(event: ClipboardEvent) {
+      if (!joinRef.current) return;
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.rangeCount === 0) return;
+      const node = selection.anchorNode;
+      const element = node instanceof Element ? node : node?.parentElement;
+      if (!element?.closest(".quire-text")) return;
+      const joined = joinCopiedLines(selection.toString());
+      event.preventDefault();
+      event.clipboardData?.setData("text/plain", joined);
+    }
+    document.addEventListener("copy", onCopy);
+    return () => document.removeEventListener("copy", onCopy);
+  }, []);
 
   function toggleStay() {
     setStaySelection((value) => {
@@ -775,6 +814,8 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     setMate(null);
     setPairKind(null);
     setFigureReport(null);
+    targetMarksRef.current = [];
+    setTargetMarks([]);
     void current.pdf.cleanup();
   }
 
@@ -814,11 +855,13 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       const width = first.getViewport({ scale: 1 }).width;
       const kind = mateIntent.current;
       const previous = mateDocRef.current;
-      const opened: MateDoc = { pdf: next, name: file.name, numPages: next.numPages, baseWidth: width };
+      const opened: MateDoc = { pdf: next, name: file.name, numPages: next.numPages, baseWidth: width, bytes };
       mateDocRef.current = opened;
       setMate(opened);
       setPairKind(kind);
       setFigureReport(null);
+      targetMarksRef.current = [];
+      setTargetMarks([]);
       setMateScale(scaleRef.current);
       setLinked(true);
       setMatePage(1);
@@ -971,7 +1014,10 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     setError("");
     try {
       const report = await checkBilingual(source, target);
+      const marked = await marksOnTarget(target, report);
       setFigureReport(report);
+      targetMarksRef.current = marked;
+      setTargetMarks(marked);
       const missed = report.filter(
         (pair) =>
           pair.sourcePage === null ||
@@ -979,17 +1025,38 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
           pair.datesSource.length ||
           pair.datesTarget.length ||
           pair.figuresSource.length ||
-          pair.figuresTarget.length,
+          pair.figuresTarget.length ||
+          pair.formats.length,
       ).length;
+      const notes = marked.filter((mark) => mark.kind === "callout").length;
       setStatus(
-        missed
-          ? `${missed} source and target ${missed === 1 ? "page differs" : "pages differ"}.`
-          : "Source and target figures and dates match.",
+        notes
+          ? `Marked ${notes} on the target.`
+          : missed
+            ? `${missed} source and target ${missed === 1 ? "page differs" : "pages differ"}.`
+            : "Source and target match.",
       );
     } catch {
       setError("Figures and dates could not be checked.");
     } finally {
       setFigureBusy(false);
+    }
+  }
+
+  async function downloadTarget() {
+    const current = mateDocRef.current;
+    const marked = targetMarksRef.current;
+    if (!current || !marked.length || exporting !== null) return;
+    setExporting("target");
+    setError("");
+    try {
+      const output = await embedMarks(current.bytes, marked, []);
+      downloadBlob(new Blob([output.slice(0)], { type: "application/pdf" }), `${safeStem(current.name)}-figures.pdf`);
+      setStatus("Downloaded the target PDF with the figure and date marks.");
+    } catch {
+      setError("The target PDF could not be written.");
+    } finally {
+      setExporting(null);
     }
   }
 
@@ -1006,7 +1073,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         pdf={doc}
         pageNumber={pageNumber}
         scale={pageScale}
-        marks={side === "work" ? marks : []}
+        marks={side === "work" ? marks : targetMarks}
         hits={side === "work" ? hits : []}
         activeHit={side === "work" ? hitIndex : -1}
         activeId={side === "work" ? activeId : null}
@@ -1014,7 +1081,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         eager={index === 0}
         pane={side}
         domId={`quire-page-${prefix}-${pageNumber}`}
-        onPick={(id) => pickMark(id, false)}
+        onPick={side === "work" ? (id) => pickMark(id, false) : () => {}}
         onPlace={side === "work" ? placeShape : undefined}
         onGestureStart={side === "work" ? gestureStart : undefined}
         onGestureMove={side === "work" ? gestureMove : undefined}
@@ -1221,6 +1288,16 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
             >
               Stay selection
             </button>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={joinLines}
+              title="Join lines. Copying the selected text removes the line breaks. A blank line stays. Chinese joins without a space."
+              onClick={toggleJoin}
+              className={`h-11 shrink-0 rounded-md px-3 text-sm ${joinLines ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+            >
+              Join lines
+            </button>
             <span className="mx-1 h-6 w-px shrink-0 bg-line-dark" />
             <label className="relative shrink-0">
               <span className="sr-only">Find in the PDF</span>
@@ -1391,7 +1468,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                       ? "Drag the arrow. Select it, then drag the line or either end."
                       : tool === "select"
                         ? "Select is on. Click a mark to move it, or choose Highlight, Underline, or Strike."
-                        : `Select a line, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}`}
+                        : `Select a line, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}${joinLines ? " Join lines removes the breaks when you copy." : ""}`}
                 </p>
               )}
               {renderPages(pdf, workNumbers, "work", scale)}
@@ -1403,16 +1480,25 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
             {pairKind === "bilingual" && (
               <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line-dark px-3 py-2">
                 <p className="min-w-0 flex-1 text-sm text-pretty text-muted">
-                  Source, then target. Figures and dates are checked on the same page number.
+                  Source, then target. Figures, dates, bold, and italic are marked on the target.
                 </p>
                 <button
                   type="button"
-                  title="Check figures and dates. A date matches by the day. An amount matches without the currency sign."
+                  title="Check figures, dates, bold, and italic. A date matches by the day. An amount matches without the currency sign."
                   disabled={figureBusy}
                   onClick={() => void checkFigures()}
                   className="h-11 shrink-0 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40"
                 >
                   {figureBusy ? "Checking…" : "Figures and dates"}
+                </button>
+                <button
+                  type="button"
+                  title="Download the target PDF with the figure and date marks."
+                  disabled={!targetMarks.length || exporting !== null}
+                  onClick={() => void downloadTarget()}
+                  className="h-11 shrink-0 rounded-md bg-raised px-4 text-sm text-paper disabled:opacity-40"
+                >
+                  {exporting === "target" ? "Saving…" : "Target PDF"}
                 </button>
               </div>
             )}
@@ -1462,7 +1548,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
               >
                 <p className="mb-4 text-center text-sm text-muted">
                   {pairKind === "bilingual"
-                    ? "Bilingual. Marks stay on the source."
+                    ? "Bilingual. Figure and date differences are marked on this file."
                     : "Compare. Marks stay on the other file. Changes treats this file as the later copy."}
                 </p>
                 {renderPages(mate.pdf, Array.from({ length: mate.numPages }, (_, index) => index + 1), "mate", mateScale)}
@@ -1638,11 +1724,11 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
           <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-md bg-paper p-5 text-ink">
             <h2 className="text-2xl text-balance">Figures and dates</h2>
             <p className="mt-2 text-sm text-pretty text-ink-soft">
-              The source page is checked against the target page with the same number. A date matches by the day. An amount matches without the currency sign or the thousands separators.
+              The source page is checked against the target page with the same number. A date matches by the day. An amount matches without the currency sign or the thousands separators. Bold and italic are checked on a matching figure or date, and on other wording that is the same on both pages.
             </p>
             <div className="mt-4 min-h-0 flex-1 overflow-auto">
               {figureReport.every((pair) => !pairDiffers(pair)) ? (
-                <p className="text-sm text-ink-soft">Figures and dates match.</p>
+                <p className="text-sm text-ink-soft">Figures, dates, and format match.</p>
               ) : (
                 figureReport.filter(pairDiffers).map((pair) => (
                   <section key={pair.page} className="mt-4 border-t border-line pt-3 first:mt-0 first:border-t-0 first:pt-0">
@@ -1657,6 +1743,16 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                     {pair.targetPage === null && <p className="mt-1 text-sm text-ink-soft">No target page for this number.</p>}
                     <GapList title="Only on the source" dates={pair.datesSource} figures={pair.figuresSource} />
                     <GapList title="Only on the target" dates={pair.datesTarget} figures={pair.figuresTarget} />
+                    {pair.formats.length > 0 && (
+                      <div className="mt-2">
+                        <p className="text-sm">Format</p>
+                        <ul className="mt-1 list-disc pl-5 text-sm text-ink-soft">
+                          {pair.formats.map((item, index) => (
+                            <li key={`s-${index}`}>{`${item.raw}. ${item.note}`}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
                   </section>
                 ))
               )}
@@ -1703,7 +1799,8 @@ function pairDiffers(pair: PairCheck) {
     pair.datesSource.length > 0 ||
     pair.datesTarget.length > 0 ||
     pair.figuresSource.length > 0 ||
-    pair.figuresTarget.length > 0
+    pair.figuresTarget.length > 0 ||
+    pair.formats.length > 0
   );
 }
 

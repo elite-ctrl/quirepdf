@@ -1,6 +1,9 @@
-import { pagePlainText, type PdfDoc } from "@/lib/pdf-client";
+import type { PdfDoc } from "@/lib/pdf-client";
+import type { Mark, Quad } from "@/lib/marks";
 
 export type SideGap = { raw: string; extra: number };
+
+export type FormatGap = { raw: string; note: string; at: number };
 
 export type PairCheck = {
   page: number;
@@ -10,9 +13,12 @@ export type PairCheck = {
   datesTarget: SideGap[];
   figuresSource: SideGap[];
   figuresTarget: SideGap[];
+  formats: FormatGap[];
 };
 
-type Token = { kind: "date" | "figure"; key: string; raw: string };
+type Face = { bold: boolean; italic: boolean };
+
+type Token = { kind: "date" | "figure"; key: string; raw: string; bold: boolean; italic: boolean };
 
 const MONTHS: Record<string, number> = {
   january: 1,
@@ -77,7 +83,34 @@ function percentOf(word: string | undefined): boolean {
   return /%|％|个百分点|percent/.test(word.toLowerCase());
 }
 
-export function tokensIn(source: string): Token[] {
+function styleOf(faces: Face[] | undefined, start: number, end: number): Face {
+  if (!faces) return { bold: false, italic: false };
+  let bold = 0;
+  let italic = 0;
+  let count = 0;
+  for (let index = start; index < end; index += 1) {
+    const face = faces[index];
+    if (!face) continue;
+    count += 1;
+    if (face.bold) bold += 1;
+    if (face.italic) italic += 1;
+  }
+  if (!count) return { bold: false, italic: false };
+  return { bold: bold * 2 >= count, italic: italic * 2 >= count };
+}
+
+function faceNote(source: Face, target: Face): string {
+  const parts: string[] = [];
+  if (source.bold !== target.bold) parts.push(source.bold ? "Source is bold." : "Source is not bold.");
+  if (source.italic !== target.italic) parts.push(source.italic ? "Source is italic." : "Source is not italic.");
+  return parts.join(" ");
+}
+
+function styleKey(face: Face): string {
+  return `${face.bold ? "b" : ""}${face.italic ? "i" : ""}` || "r";
+}
+
+export function tokensIn(source: string, faces?: Face[]): Token[] {
   const text = source.normalize("NFKC");
   const tokens: Token[] = [];
   const mask = new Array(text.length).fill(false);
@@ -120,7 +153,7 @@ export function tokensIn(source: string): Token[] {
       const key = pattern.key(match);
       if (!key) continue;
       mask.fill(true, start, end);
-      tokens.push({ kind: "date", key, raw: match[0].replace(/\s+/g, " ").trim() });
+      tokens.push({ kind: "date", key, raw: match[0].replace(/\s+/g, " ").trim(), ...styleOf(faces, start, end) });
     }
   }
 
@@ -141,7 +174,8 @@ export function tokensIn(source: string): Token[] {
     const value = magnitude * scaleOf(tail) * (negative ? -1 : 1);
     const key = percentOf(tail) ? `${canonicalNumber(value)}%` : canonicalNumber(value);
     if (!key) continue;
-    tokens.push({ kind: "figure", key, raw: raw.replace(/[()]/g, "") });
+    const start = (match.index ?? 0) + match[0].length - match[1].length;
+    tokens.push({ kind: "figure", key, raw: raw.replace(/[()]/g, ""), ...styleOf(faces, start, start + match[1].length) });
   }
   return tokens;
 }
@@ -170,17 +204,107 @@ function gaps(source: Token[], target: Token[], kind: Token["kind"]): { source: 
   return { source: only(a, b), target: only(b, a) };
 }
 
-export function compareSides(sourceText: string, targetText: string): Pick<PairCheck, "datesSource" | "datesTarget" | "figuresSource" | "figuresTarget"> {
-  const source = tokensIn(sourceText);
-  const target = tokensIn(targetText);
+export function compareSides(
+  sourceText: string,
+  targetText: string,
+  sourceFaces?: Face[],
+  targetFaces?: Face[],
+): Pick<PairCheck, "datesSource" | "datesTarget" | "figuresSource" | "figuresTarget" | "formats"> {
+  const source = tokensIn(sourceText, sourceFaces);
+  const target = tokensIn(targetText, targetFaces);
   const dates = gaps(source, target, "date");
   const figures = gaps(source, target, "figure");
+  const styled = [...styleGaps(source, target, "date"), ...styleGaps(source, target, "figure")];
+  const covered = new Set(styled.map((item) => item.raw));
+  const formats = [
+    ...styled,
+    ...wordStyleGaps(sourceText, sourceFaces, targetText, targetFaces).filter(
+      (item) => ![...covered].some((raw) => raw === item.raw || raw.includes(item.raw)),
+    ),
+  ];
   return {
     datesSource: dates.source,
     datesTarget: dates.target,
     figuresSource: figures.source,
     figuresTarget: figures.target,
+    formats,
   };
+}
+
+function styleGaps(source: Token[], target: Token[], kind: Token["kind"]): FormatGap[] {
+  const grouped = (list: Token[]) => {
+    const map = new Map<string, Token[]>();
+    for (const token of list) {
+      if (token.kind !== kind) continue;
+      const bucket = map.get(token.key) ?? [];
+      bucket.push(token);
+      map.set(token.key, bucket);
+    }
+    return map;
+  };
+  const from = grouped(source);
+  const found: FormatGap[] = [];
+  for (const [key, targetList] of grouped(target)) {
+    const sourceList = from.get(key);
+    if (!sourceList?.length) continue;
+    const paired = Math.min(sourceList.length, targetList.length);
+    const seen = new Map<string, number>();
+    for (let index = 0; index < targetList.length; index += 1) {
+      const token = targetList[index];
+      const at = seen.get(token.raw) ?? 0;
+      seen.set(token.raw, at + 1);
+      if (index >= paired) continue;
+      const note = faceNote(sourceList[index], token);
+      if (note) found.push({ raw: token.raw, note, at });
+    }
+  }
+  return found;
+}
+
+function worthStyle(text: string): boolean {
+  const flat = text.trim();
+  if (flat.length < 2) return false;
+  if (/^[\d,，.]+$/.test(flat)) return false;
+  if (/^[A-Za-z]{1,2}$/.test(flat)) return false;
+  return /[A-Za-z\u3400-\u9FFF]/.test(flat);
+}
+
+function wordStyleGaps(sourceText: string, sourceFaces: Face[] | undefined, targetText: string, targetFaces: Face[] | undefined): FormatGap[] {
+  const words = (text: string, faces?: Face[]) => {
+    const list: Array<Face & { text: string }> = [];
+    for (const match of text.matchAll(/\S+/g)) {
+      const start = match.index ?? 0;
+      const token = match[0];
+      if (!worthStyle(token)) continue;
+      list.push({ text: token, ...styleOf(faces, start, start + token.length) });
+    }
+    return list;
+  };
+  const pools = new Map<string, Face[]>();
+  for (const word of words(sourceText, sourceFaces)) {
+    const bucket = pools.get(word.text) ?? [];
+    bucket.push(word);
+    pools.set(word.text, bucket);
+  }
+  const seen = new Map<string, number>();
+  const found: FormatGap[] = [];
+  for (const word of words(targetText, targetFaces)) {
+    const at = seen.get(word.text) ?? 0;
+    seen.set(word.text, at + 1);
+    const pool = pools.get(word.text);
+    if (!pool?.length) continue;
+    const key = styleKey(word);
+    const matchAt = pool.findIndex((face) => styleKey(face) === key);
+    if (matchAt >= 0) {
+      pool.splice(matchAt, 1);
+      continue;
+    }
+    const sourceFace = pool.shift();
+    if (!sourceFace) continue;
+    const note = faceNote(sourceFace, word);
+    if (note) found.push({ raw: word.text, note, at });
+  }
+  return found;
 }
 
 const emptySide = {
@@ -188,19 +312,59 @@ const emptySide = {
   datesTarget: [],
   figuresSource: [],
   figuresTarget: [],
+  formats: [],
 };
+
+type FontRecord = { bold?: boolean; italic?: boolean; black?: boolean };
+
+async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: string; faces: Face[] }> {
+  const page = await pdf.getPage(pageNumber);
+  const content = await page.getTextContent();
+  const objs = page.commonObjs;
+  const cache = new Map<string, Face>();
+  const faceOf = (fontName: string | undefined): Face => {
+    if (!fontName) return { bold: false, italic: false };
+    const cached = cache.get(fontName);
+    if (cached) return cached;
+    let face: Face = { bold: false, italic: false };
+    try {
+      const font = objs.get(fontName) as FontRecord;
+      face = { bold: !!(font?.bold || font?.black), italic: !!font?.italic };
+    } catch {
+      face = { bold: false, italic: false };
+    }
+    cache.set(fontName, face);
+    return face;
+  };
+  let text = "";
+  const faces: Face[] = [];
+  const push = (piece: string, face: Face) => {
+    text += piece;
+    for (let index = 0; index < piece.length; index += 1) faces.push(face);
+  };
+  for (const item of content.items) {
+    if (!("str" in item)) continue;
+    const run = item as TextRun;
+    const piece = run.str.normalize("NFKC");
+    const face = faceOf(run.fontName);
+    if (text && piece && !/\s$/.test(text) && !/^\s/.test(piece)) push(" ", { bold: false, italic: false });
+    if (piece) push(piece, face);
+    if (run.hasEOL) push("\n", { bold: false, italic: false });
+  }
+  return { text, faces };
+}
 
 export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<PairCheck[]> {
   const count = Math.max(source.numPages, target.numPages);
   const pages = Array.from({ length: count }, (_, index) => index + 1);
-  const sourceText = new Map<number, string>();
-  const targetText = new Map<number, string>();
+  const sourceText = new Map<number, { text: string; faces: Face[] }>();
+  const targetText = new Map<number, { text: string; faces: Face[] }>();
   await Promise.all([
     ...pages.filter((page) => page <= source.numPages).map(async (page) => {
-      sourceText.set(page, await pagePlainText(source, page));
+      sourceText.set(page, await readStyled(source, page));
     }),
     ...pages.filter((page) => page <= target.numPages).map(async (page) => {
-      targetText.set(page, await pagePlainText(target, page));
+      targetText.set(page, await readStyled(target, page));
     }),
   ]);
   return pages.map((page) => {
@@ -209,6 +373,219 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
     if (sourcePage === null || targetPage === null) {
       return { page, sourcePage, targetPage, ...emptySide };
     }
-    return { page, sourcePage, targetPage, ...compareSides(sourceText.get(page) ?? "", targetText.get(page) ?? "") };
+    const left = sourceText.get(page);
+    const right = targetText.get(page);
+    return {
+      page,
+      sourcePage,
+      targetPage,
+      ...compareSides(left?.text ?? "", right?.text ?? "", left?.faces, right?.faces),
+    };
   });
 }
+
+type TextRun = {
+  str: string;
+  transform: number[];
+  width: number;
+  height: number;
+  hasEOL?: boolean;
+  fontName?: string;
+};
+
+type Span = { start: number; end: number; x: number; y: number; w: number; h: number };
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function expand(list: SideGap[]): string[] {
+  const raws: string[] = [];
+  for (const item of list) {
+    const times = Math.max(1, Math.round(item.extra));
+    for (let index = 0; index < times; index += 1) raws.push(item.raw);
+  }
+  return raws;
+}
+
+async function pageLayout(pdf: PdfDoc, pageNumber: number): Promise<{ text: string; spans: Span[]; width: number; height: number }> {
+  const page = await pdf.getPage(pageNumber);
+  const viewport = page.getViewport({ scale: 1 });
+  const content = await page.getTextContent();
+  let text = "";
+  const spans: Span[] = [];
+  for (const item of content.items) {
+    if (!("str" in item)) continue;
+    const run = item as TextRun;
+    const piece = run.str.normalize("NFKC");
+    if (text && piece && !/\s$/.test(text) && !/^\s/.test(piece)) text += " ";
+    if (piece) {
+      const start = text.length;
+      text += piece;
+      const height = run.height || Math.hypot(run.transform[2] ?? 0, run.transform[3] ?? 0) || 10;
+      spans.push({
+        start,
+        end: text.length,
+        x: run.transform[4] ?? 0,
+        y: run.transform[5] ?? 0,
+        w: run.width || Math.max(4, piece.length * height * 0.45),
+        h: height,
+      });
+    }
+    if (run.hasEOL) text += "\n";
+  }
+  return { text, spans, width: viewport.width, height: viewport.height };
+}
+
+function locate(text: string, spans: Span[], raw: string): Quad[][] {
+  const parts = raw.normalize("NFKC").trim().split(/\s+/).filter(Boolean).map(escapeRegExp);
+  if (!parts.length) return [];
+  const found: Quad[][] = [];
+  for (const match of text.matchAll(new RegExp(parts.join("\\s+"), "g"))) {
+    const at = match.index ?? 0;
+    const end = at + match[0].length;
+    const quads: Quad[] = [];
+    for (const span of spans) {
+      if (span.end <= at || span.start >= end || span.w <= 0) continue;
+      const spanLength = Math.max(1, span.end - span.start);
+      const overlapStart = Math.max(at, span.start);
+      const overlapEnd = Math.min(end, span.end);
+      const startRatio = (overlapStart - span.start) / spanLength;
+      const endRatio = (overlapEnd - span.start) / spanLength;
+      const w = span.w * (endRatio - startRatio);
+      if (w < 0.2) continue;
+      quads.push({ x: span.x + span.w * startRatio, y: span.y, w, h: span.h });
+    }
+    if (quads.length) found.push(quads);
+  }
+  return found;
+}
+
+function figureId(): string {
+  return `figure-${crypto.randomUUID()}`;
+}
+
+function markText(page: number, quads: Quad[], quote: string, ink: "crimson" | "steel", label: "number" | "style", kind: "highlight" | "underline"): Mark {
+  return {
+    id: figureId(),
+    page,
+    kind,
+    pass: 1,
+    ink,
+    label,
+    note: quote,
+    quote,
+    quads,
+    createdAt: Date.now(),
+  };
+}
+
+function callout(page: number, note: string, box: Quad, tip: { x: number; y: number }, ink: "crimson" | "steel", label: "number" | "style"): Mark {
+  return {
+    id: figureId(),
+    page,
+    kind: "callout",
+    pass: 1,
+    ink,
+    label,
+    note,
+    quote: note,
+    quads: [box],
+    to: tip,
+    createdAt: Date.now(),
+  };
+}
+
+function placeCallout(
+  page: number,
+  note: string,
+  anchor: Quad | null,
+  width: number,
+  height: number,
+  stack: number,
+  ink: "crimson" | "steel" = "crimson",
+  label: "number" | "style" = "number",
+): Mark {
+  const boxW = 210;
+  const boxH = 36;
+  if (anchor) {
+    let x = anchor.x;
+    let y = anchor.y + anchor.h + 8 + stack * 40;
+    if (y + boxH > height - 12) y = Math.max(12, anchor.y - boxH - 8 - stack * 40);
+    if (x + boxW > width - 12) x = Math.max(12, width - boxW - 12);
+    return callout(page, note, { x, y, w: boxW, h: boxH }, { x: anchor.x + anchor.w / 2, y: anchor.y + anchor.h / 2 }, ink, label);
+  }
+  const y = Math.max(36, height - 56 - stack * 44);
+  return callout(page, note, { x: 36, y, w: boxW, h: boxH }, { x: 48, y: y - 10 }, ink, label);
+}
+
+/** Highlights the target wording and adds a callout. Source-only items are callouts on the target page. */
+export async function marksOnTarget(target: PdfDoc, pairs: PairCheck[]): Promise<Mark[]> {
+  const marks: Mark[] = [];
+  for (const pair of pairs) {
+    if (marks.length >= 200) break;
+    if (pair.targetPage === null) continue;
+    const layout = await pageLayout(target, pair.targetPage);
+    const cache = new Map<string, Quad[][]>();
+    const used = new Map<string, number>();
+    const take = (raw: string): Quad[] | null => {
+      const found = cache.get(raw) ?? locate(layout.text, layout.spans, raw);
+      if (!cache.has(raw)) cache.set(raw, found);
+      const index = used.get(raw) ?? 0;
+      used.set(raw, index + 1);
+      return found[index] ?? null;
+    };
+    let stack = 0;
+    const add = (kind: "Date" | "Figure", sourceRaws: string[], targetRaws: string[]) => {
+      const paired = Math.min(sourceRaws.length, targetRaws.length);
+      for (let index = 0; index < targetRaws.length; index += 1) {
+        if (marks.length >= 200) return;
+        const raw = targetRaws[index];
+        const note = index < paired ? `Source ${kind.toLowerCase()}: ${sourceRaws[index]}` : "Not on the source.";
+        const quads = take(raw);
+        if (quads) {
+          marks.push(markText(pair.targetPage as number, quads, raw, "crimson", "number", "highlight"));
+          marks.push(placeCallout(pair.targetPage as number, note, quads[0], layout.width, layout.height, stack));
+        } else {
+          marks.push(placeCallout(pair.targetPage as number, `Target ${kind.toLowerCase()}: ${raw}. ${note}`, null, layout.width, layout.height, stack));
+        }
+        stack += 1;
+      }
+      for (let index = paired; index < sourceRaws.length; index += 1) {
+        if (marks.length >= 200) return;
+        marks.push(
+          placeCallout(
+            pair.targetPage as number,
+            `Source ${kind.toLowerCase()}: ${sourceRaws[index]}`,
+            null,
+            layout.width,
+            layout.height,
+            stack,
+          ),
+        );
+        stack += 1;
+      }
+    };
+    if (pair.sourcePage === null) {
+      marks.push(placeCallout(pair.targetPage, "No source page for this number.", null, layout.width, layout.height, stack));
+      continue;
+    }
+    add("Date", expand(pair.datesSource), expand(pair.datesTarget));
+    add("Figure", expand(pair.figuresSource), expand(pair.figuresTarget));
+    for (const item of pair.formats) {
+      if (marks.length >= 200) break;
+      const found = cache.get(item.raw) ?? locate(layout.text, layout.spans, item.raw);
+      if (!cache.has(item.raw)) cache.set(item.raw, found);
+      const quads = found[item.at] ?? null;
+      if (quads) {
+        marks.push(markText(pair.targetPage, quads, item.raw, "steel", "style", "underline"));
+        marks.push(placeCallout(pair.targetPage, item.note, quads[0], layout.width, layout.height, stack, "steel", "style"));
+      } else {
+        marks.push(placeCallout(pair.targetPage, `${item.raw}. ${item.note}`, null, layout.width, layout.height, stack, "steel", "style"));
+      }
+      stack += 1;
+    }
+  }
+  return marks;
+}
+
