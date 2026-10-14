@@ -10,6 +10,6 @@ Install Quire for Windows
 To remove Quire, use Start menu "Uninstall Quire", or Windows Settings, Apps.
 
 The first PDF on a new computer still needs your passcode. This computer remembers it after that.
-The desk matches the web version: Compare, Bilingual, figures and dates, bold and italic, and Join lines.
-Your PDFs and marks stay on this computer. Nothing is uploaded.
+The desk matches the web version: Compare, Bilingual, figures and dates, bold and italic, Join lines, and callouts you can resize.
+There is no usage report. Your PDFs and marks stay on this computer. Nothing is uploaded.
 Open the same PDF again on this computer and the marks come back.

@@ -9,6 +9,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: [
+      { find: "@/components/desk/Usage", replacement: resolve(import.meta.dirname, "extension/no-usage.tsx") },
       { find: "@/lib/usage.server", replacement: resolve(import.meta.dirname, "portable/usage-stub.ts") },
       { find: "@/lib/usage", replacement: resolve(import.meta.dirname, "portable/usage-client.ts") },
       { find: "@", replacement: resolve(import.meta.dirname, "src") },

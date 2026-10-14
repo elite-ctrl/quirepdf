@@ -24,6 +24,7 @@ const html = (await readFile(nested, "utf8")).replaceAll("../assets/", "./assets
 await writeFile(resolve(built, "index.html"), html);
 await rm(nested);
 await rm(resolve(built, "portable"), { recursive: true });
+await rm(resolve(built, "__grok"), { recursive: true, force: true });
 
 await rm(stage, { recursive: true, force: true });
 await mkdir(resolve(app, "Contents/MacOS"), { recursive: true });

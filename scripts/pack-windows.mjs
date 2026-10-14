@@ -21,6 +21,7 @@ const html = (await readFile(nested, "utf8")).replaceAll("../assets/", "./assets
 await writeFile(resolve(out, "index.html"), html);
 await rm(nested);
 await rm(resolve(out, "portable"), { recursive: true });
+await rm(resolve(out, "__grok"), { recursive: true, force: true });
 
 await cp(resolve(root, "portable/serve.ps1"), resolve(out, "serve.ps1"));
 await cp(resolve(root, "portable/register.ps1"), resolve(out, "register.ps1"));
