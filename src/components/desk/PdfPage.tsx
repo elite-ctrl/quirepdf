@@ -9,7 +9,8 @@ export type ShapePlace =
   | { kind: "arrow"; from: Point; to: Point }
   | { kind: "callout"; quad: { x: number; y: number; w: number; h: number }; tip: Point };
 
-type DragMode = "body" | "from" | "to" | "box";
+type Corner = "nw" | "ne" | "sw" | "se";
+type DragMode = "body" | "from" | "to" | "box" | Corner;
 
 type Props = {
   pdf: PdfDoc;
@@ -80,7 +81,7 @@ export function PdfPage({
   const [sketch, setSketch] = useState<{ start: Point; current: Point } | null>(null);
   const gesture = useRef<
     | { type: "draw"; start: Point; current: Point; moved: boolean }
-    | { type: "drag"; id: string; mode: DragMode; origin: Point; mark: Mark; moved: boolean }
+    | { type: "drag"; id: string; mode: DragMode; origin: Point; mark: Mark; moved: boolean; anchor?: Point }
     | null
   >(null);
 
@@ -141,6 +142,7 @@ export function PdfPage({
         transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
         annotationMode: pdfjs.AnnotationMode.DISABLE,
       });
+      const rendered = ignoreCancel(renderTask.promise);
       job.render = renderTask;
       if (job.cancel) {
         renderTask.cancel();
@@ -148,7 +150,10 @@ export function PdfPage({
       }
       textEl.replaceChildren();
       const textContent = await page.getTextContent();
-      if (job.cancel) return;
+      if (job.cancel) {
+        renderTask.cancel();
+        return;
+      }
       const strings = textContent.items.filter((item) => "str" in item && String(item.str).trim().length > 0);
       setNoText(strings.length === 0);
       const textLayer = new pdfjs.TextLayer({
@@ -156,17 +161,15 @@ export function PdfPage({
         container: textEl,
         viewport: view,
       });
+      const textDone = ignoreCancel(textLayer.render());
       job.text = textLayer;
       if (job.cancel) {
+        renderTask.cancel();
         textLayer.cancel();
         return;
       }
-      try {
-        await Promise.all([renderTask.promise, textLayer.render()]);
-      } catch (error) {
-        const name = error instanceof Error ? error.name : "";
-        if (!job.cancel && name !== "RenderingCancelledException") throw error;
-      }
+      await rendered;
+      await textDone;
     })();
 
     return () => {
@@ -232,6 +235,8 @@ export function PdfPage({
       } else if (current.mode === "box" && current.mark.quads[0]) {
         const quad = current.mark.quads[0];
         moveRef.current?.(current.id, { quads: [{ ...quad, x: quad.x + dx, y: quad.y + dy }] });
+      } else if (isCorner(current.mode) && current.anchor) {
+        moveRef.current?.(current.id, { quads: [clampQuad(sizedQuad(current.anchor, next), viewportRef.current)] });
       }
     };
     const up = () => {
@@ -259,6 +264,21 @@ export function PdfPage({
     listen();
   }
 
+  function fixedCorner(mark: Mark, corner: Corner): Point | undefined {
+    const quad = mark.quads[0];
+    const view = viewportRef.current;
+    if (!quad || !view) return undefined;
+    const box = quadToView(quad, view);
+    const fixed = {
+      nw: { x: box.left + box.width, y: box.top + box.height },
+      ne: { x: box.left, y: box.top + box.height },
+      sw: { x: box.left + box.width, y: box.top },
+      se: { x: box.left, y: box.top },
+    }[corner];
+    const [x, y] = view.convertToPdfPoint(fixed.x, fixed.y);
+    return { x, y };
+  }
+
   function beginDrag(event: ReactPointerEvent, mark: Mark, mode: DragMode) {
     if (pane === "mate") return;
     const selectedCallout = mark.kind === "callout" && mark.id === activeId;
@@ -269,7 +289,7 @@ export function PdfPage({
     event.stopPropagation();
     onPick(mark.id);
     startRef.current?.();
-    gesture.current = { type: "drag", id: mark.id, mode, origin, mark, moved: false };
+    gesture.current = { type: "drag", id: mark.id, mode, origin, mark, moved: false, anchor: isCorner(mode) ? fixedCorner(mark, mode) : undefined };
     listen();
   }
 
@@ -457,12 +477,17 @@ export function PdfPage({
                       borderColor: `var(--color-${mark.ink})`,
                       boxShadow: active ? "3px 3px 0 #000" : undefined,
                       background: active ? "var(--color-stamp)" : "#fff",
+                      overflow: active ? "visible" : undefined,
                     }}
                     onPointerDown={(event) => beginDrag(event, mark, "box")}
                   >
                     <p className="line-clamp-4 text-xs leading-snug font-semibold text-ink">
                       {mark.note.trim() || labelName(mark.label)}
                     </p>
+                    {active &&
+                      (["nw", "ne", "sw", "se"] as const).map((corner) => (
+                        <CornerHandle key={corner} corner={corner} onPointerDown={(event) => beginDrag(event, mark, corner)} />
+                      ))}
                   </div>
                 );
               })}
@@ -472,6 +497,62 @@ export function PdfPage({
       </div>
       {noText && <p className="mt-2 text-center text-sm text-muted">No selectable text on this page.</p>}
     </div>
+  );
+}
+
+function ignoreCancel(promise: Promise<unknown>) {
+  return promise.catch((error: unknown) => {
+    const name = error instanceof Error ? error.name : "";
+    const message = error instanceof Error ? error.message : "";
+    if (name === "RenderingCancelledException" || message.includes("Rendering cancelled")) return;
+    throw error;
+  });
+}
+
+function isCorner(mode: DragMode): mode is Corner {
+  return mode === "nw" || mode === "ne" || mode === "sw" || mode === "se";
+}
+
+function sizedQuad(anchor: Point, point: Point) {
+  const minW = 40;
+  const minH = 24;
+  let x2 = point.x;
+  let y2 = point.y;
+  if (Math.abs(x2 - anchor.x) < minW) x2 = anchor.x + (x2 >= anchor.x ? minW : -minW);
+  if (Math.abs(y2 - anchor.y) < minH) y2 = anchor.y + (y2 >= anchor.y ? minH : -minH);
+  return {
+    x: Math.min(anchor.x, x2),
+    y: Math.min(anchor.y, y2),
+    w: Math.abs(x2 - anchor.x),
+    h: Math.abs(y2 - anchor.y),
+  };
+}
+
+function CornerHandle({
+  corner,
+  onPointerDown,
+}: {
+  corner: Corner;
+  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+}) {
+  const place =
+    corner === "nw"
+      ? { left: -6, top: -6 }
+      : corner === "ne"
+        ? { right: -6, top: -6 }
+        : corner === "sw"
+          ? { left: -6, bottom: -6 }
+          : { right: -6, bottom: -6 };
+  return (
+    <div
+      data-handle="true"
+      data-resize={corner}
+      role="button"
+      aria-label="Resize callout"
+      className="absolute z-10 h-3 w-3 border-2 border-black bg-white"
+      style={place}
+      onPointerDown={onPointerDown}
+    />
   );
 }
 

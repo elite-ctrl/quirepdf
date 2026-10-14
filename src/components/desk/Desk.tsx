@@ -1512,7 +1512,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
               {marks.length === 0 && (
                 <p className="mb-4 text-center text-sm text-muted">
                   {tool === "callout"
-                    ? "Press where it should point, then drag the box into place. A selected callout can be dragged; the dot moves the point."
+                    ? "Press where it should point, then drag the box into place. Select it and drag a corner to change the size. The dot moves the point."
                     : tool === "arrow"
                       ? "Drag the arrow. Select it, then drag the line or either end."
                       : tool === "select"

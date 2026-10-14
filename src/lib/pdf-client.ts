@@ -43,6 +43,8 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfDoc> {
     cMapUrl: `${base}pdfjs/cmaps/`,
     cMapPacked: true,
     standardFontDataUrl: `${base}pdfjs/standard_fonts/`,
+    enableXfa: false,
+    verbosity: 0,
   });
   return task.promise;
 }

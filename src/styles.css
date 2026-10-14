@@ -294,6 +294,16 @@
   cursor: grab;
 }
 
+.quire-callout [data-resize="nw"],
+.quire-callout [data-resize="se"] {
+  cursor: nwse-resize;
+}
+
+.quire-callout [data-resize="ne"],
+.quire-callout [data-resize="sw"] {
+  cursor: nesw-resize;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .quire-app {
     scroll-behavior: auto;
