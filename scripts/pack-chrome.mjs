@@ -7,6 +7,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const built = resolve(root, "dist-portable");
 const stage = resolve(root, "dist-chrome");
 const zipPath = resolve(root, "artifacts/quire-extension.zip");
+const storePath = resolve(root, "artifacts/quire-webstore.zip");
 
 function run(command, args, cwd = root) {
   return new Promise((resolveRun, reject) => {
@@ -58,6 +59,7 @@ await rm(resolve(stage, "__grok"), { recursive: true, force: true });
 
 await mkdir(dirname(zipPath), { recursive: true });
 await rm(zipPath, { force: true });
+await rm(storePath, { force: true });
 await run("python3", [
   "-c",
   `
@@ -65,16 +67,27 @@ import zipfile
 from pathlib import Path
 root = Path(${JSON.stringify(stage)})
 dest = Path(${JSON.stringify(zipPath)})
-with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as z:
+store = Path(${JSON.stringify(storePath)})
+def files():
     for path in root.rglob("*"):
-        if path.is_file():
-            z.write(path, Path("Quire") / path.relative_to(root))
+        if path.is_file() and not any(part.startswith("_") for part in path.relative_to(root).parts):
+            yield path
+with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as z:
+    for path in files():
+        z.write(path, Path("Quire") / path.relative_to(root))
+with zipfile.ZipFile(store, "w", compression=zipfile.ZIP_DEFLATED) as z:
+    for path in files():
+        z.write(path, path.relative_to(root).as_posix())
 print(dest, dest.stat().st_size)
+print(store, store.stat().st_size)
 need = ["Quire/manifest.json", "Quire/desk.html", "Quire/viewer.html", "Quire/background.js", "Quire/LICENSE.txt"]
 names = set(zipfile.ZipFile(dest).namelist())
 missing = [n for n in need if n not in names]
 if missing:
     raise SystemExit("missing " + ", ".join(missing))
+store_names = set(zipfile.ZipFile(store).namelist())
+if "manifest.json" not in store_names or any(name.startswith("Quire/") for name in store_names):
+    raise SystemExit("store zip must keep manifest.json at the top")
 
 `,
 ]);

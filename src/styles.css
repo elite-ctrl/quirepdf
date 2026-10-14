@@ -290,18 +290,101 @@
   cursor: grab;
 }
 
-.quire-selecting [data-handle] {
+.quire-callout.is-selected {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.quire-callout-bar {
+  display: flex;
+  height: 22px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-bottom: 2px solid #000;
+  background: #fffdf5;
   cursor: grab;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
-.quire-callout [data-resize="nw"],
-.quire-callout [data-resize="se"] {
-  cursor: nwse-resize;
+.quire-callout-bar:active {
+  cursor: grabbing;
 }
 
-.quire-callout [data-resize="ne"],
-.quire-callout [data-resize="sw"] {
-  cursor: nesw-resize;
+.quire-callout.is-selected p {
+  min-height: 0;
+  flex: 1;
+  padding: 4px 8px;
+}
+
+.quire-callout-edge,
+.quire-callout-corner {
+  position: absolute;
+  z-index: 11;
+}
+
+.quire-callout-edge[data-resize="n"],
+.quire-callout-edge[data-resize="s"] {
+  right: 14px;
+  left: 14px;
+  height: 14px;
+  cursor: ns-resize;
+}
+
+.quire-callout-edge[data-resize="n"] { top: -7px; }
+.quire-callout-edge[data-resize="s"] { bottom: -7px; }
+.quire-callout-edge[data-resize="e"],
+.quire-callout-edge[data-resize="w"] {
+  top: 14px;
+  bottom: 14px;
+  width: 14px;
+  cursor: ew-resize;
+}
+
+.quire-callout-edge[data-resize="e"] { right: -7px; }
+.quire-callout-edge[data-resize="w"] { left: -7px; }
+
+.quire-callout-edge[data-resize="n"]::after,
+.quire-callout-edge[data-resize="s"]::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 50%;
+  width: 28px;
+  height: 4px;
+  margin-left: -14px;
+  background: #000;
+}
+
+.quire-callout-edge[data-resize="e"]::after,
+.quire-callout-edge[data-resize="w"]::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 5px;
+  width: 4px;
+  height: 28px;
+  margin-top: -14px;
+  background: #000;
+}
+
+.quire-callout-corner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #000;
+  background: #fff;
+}
+
+.quire-callout-corner[data-resize="nw"] { top: -8px; left: -8px; cursor: nwse-resize; }
+.quire-callout-corner[data-resize="se"] { right: -8px; bottom: -8px; cursor: nwse-resize; }
+.quire-callout-corner[data-resize="ne"] { top: -8px; right: -8px; cursor: nesw-resize; }
+.quire-callout-corner[data-resize="sw"] { bottom: -8px; left: -8px; cursor: nesw-resize; }
+
+.quire-selecting .quire-marks [data-handle] {
+  cursor: grab;
 }
 
 @media (prefers-reduced-motion: reduce) {

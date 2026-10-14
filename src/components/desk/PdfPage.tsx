@@ -9,8 +9,8 @@ export type ShapePlace =
   | { kind: "arrow"; from: Point; to: Point }
   | { kind: "callout"; quad: { x: number; y: number; w: number; h: number }; tip: Point };
 
-type Corner = "nw" | "ne" | "sw" | "se";
-type DragMode = "body" | "from" | "to" | "box" | Corner;
+type ResizeEdge = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
+type DragMode = "body" | "from" | "to" | "box" | ResizeEdge;
 
 type Props = {
   pdf: PdfDoc;
@@ -81,7 +81,7 @@ export function PdfPage({
   const [sketch, setSketch] = useState<{ start: Point; current: Point } | null>(null);
   const gesture = useRef<
     | { type: "draw"; start: Point; current: Point; moved: boolean }
-    | { type: "drag"; id: string; mode: DragMode; origin: Point; mark: Mark; moved: boolean; anchor?: Point }
+    | { type: "drag"; id: string; mode: DragMode; origin: Point; mark: Mark; moved: boolean; anchor?: Point; box?: { left: number; top: number; width: number; height: number } }
     | null
   >(null);
 
@@ -234,9 +234,12 @@ export function PdfPage({
         moveRef.current?.(current.id, { to: next });
       } else if (current.mode === "box" && current.mark.quads[0]) {
         const quad = current.mark.quads[0];
-        moveRef.current?.(current.id, { quads: [{ ...quad, x: quad.x + dx, y: quad.y + dy }] });
-      } else if (isCorner(current.mode) && current.anchor) {
-        moveRef.current?.(current.id, { quads: [clampQuad(sizedQuad(current.anchor, next), viewportRef.current)] });
+        const patch: Partial<Mark> = { quads: [{ ...quad, x: quad.x + dx, y: quad.y + dy }] };
+        if (current.mark.to) patch.to = { x: current.mark.to.x + dx, y: current.mark.to.y + dy };
+        moveRef.current?.(current.id, patch);
+      } else if (isResize(current.mode) && current.box && viewportRef.current) {
+        const [vx, vy] = viewportRef.current.convertToViewportPoint(next.x, next.y);
+        moveRef.current?.(current.id, { quads: [resizeBox(current.box, current.mode, { x: vx, y: vy }, viewportRef.current)] });
       }
     };
     const up = () => {
@@ -264,21 +267,6 @@ export function PdfPage({
     listen();
   }
 
-  function fixedCorner(mark: Mark, corner: Corner): Point | undefined {
-    const quad = mark.quads[0];
-    const view = viewportRef.current;
-    if (!quad || !view) return undefined;
-    const box = quadToView(quad, view);
-    const fixed = {
-      nw: { x: box.left + box.width, y: box.top + box.height },
-      ne: { x: box.left, y: box.top + box.height },
-      sw: { x: box.left + box.width, y: box.top },
-      se: { x: box.left, y: box.top },
-    }[corner];
-    const [x, y] = view.convertToPdfPoint(fixed.x, fixed.y);
-    return { x, y };
-  }
-
   function beginDrag(event: ReactPointerEvent, mark: Mark, mode: DragMode) {
     if (pane === "mate") return;
     const selectedCallout = mark.kind === "callout" && mark.id === activeId;
@@ -289,7 +277,17 @@ export function PdfPage({
     event.stopPropagation();
     onPick(mark.id);
     startRef.current?.();
-    gesture.current = { type: "drag", id: mark.id, mode, origin, mark, moved: false, anchor: isCorner(mode) ? fixedCorner(mark, mode) : undefined };
+    const quad = mark.quads[0];
+    const view = viewportRef.current;
+    gesture.current = {
+      type: "drag",
+      id: mark.id,
+      mode,
+      origin,
+      mark,
+      moved: false,
+      box: isResize(mode) && quad && view ? quadToView(quad, view) : undefined,
+    };
     listen();
   }
 
@@ -396,6 +394,7 @@ export function PdfPage({
                           <Handle
                             x={tip.x}
                             y={tip.y}
+                            r={11}
                             onPointerDown={(event) => beginDrag(event, mark, "to")}
                           />
                         )}
@@ -481,12 +480,17 @@ export function PdfPage({
                     }}
                     onPointerDown={(event) => beginDrag(event, mark, "box")}
                   >
+                    {active && (
+                      <div data-handle="true" className="quire-callout-bar" onPointerDown={(event) => beginDrag(event, mark, "box")}>
+                        Drag
+                      </div>
+                    )}
                     <p className="line-clamp-4 text-xs leading-snug font-semibold text-ink">
                       {mark.note.trim() || labelName(mark.label)}
                     </p>
                     {active &&
-                      (["nw", "ne", "sw", "se"] as const).map((corner) => (
-                        <CornerHandle key={corner} corner={corner} onPointerDown={(event) => beginDrag(event, mark, corner)} />
+                      (["n", "s", "e", "w", "nw", "ne", "sw", "se"] as const).map((edge) => (
+                        <ResizeHandle key={edge} edge={edge} onPointerDown={(event) => beginDrag(event, mark, edge)} />
                       ))}
                   </div>
                 );
@@ -509,48 +513,57 @@ function ignoreCancel(promise: Promise<unknown>) {
   });
 }
 
-function isCorner(mode: DragMode): mode is Corner {
-  return mode === "nw" || mode === "ne" || mode === "sw" || mode === "se";
+function isResize(mode: DragMode): mode is ResizeEdge {
+  return mode === "nw" || mode === "ne" || mode === "sw" || mode === "se" || mode === "n" || mode === "s" || mode === "e" || mode === "w";
 }
 
-function sizedQuad(anchor: Point, point: Point) {
-  const minW = 40;
-  const minH = 24;
-  let x2 = point.x;
-  let y2 = point.y;
-  if (Math.abs(x2 - anchor.x) < minW) x2 = anchor.x + (x2 >= anchor.x ? minW : -minW);
-  if (Math.abs(y2 - anchor.y) < minH) y2 = anchor.y + (y2 >= anchor.y ? minH : -minH);
-  return {
-    x: Math.min(anchor.x, x2),
-    y: Math.min(anchor.y, y2),
-    w: Math.abs(x2 - anchor.x),
-    h: Math.abs(y2 - anchor.y),
-  };
+function resizeBox(
+  box: { left: number; top: number; width: number; height: number },
+  mode: ResizeEdge,
+  pointer: Point,
+  view: ViewportLike,
+) {
+  let left = box.left;
+  let top = box.top;
+  let right = box.left + box.width;
+  let bottom = box.top + box.height;
+  const minW = 72;
+  const minH = 48;
+  if (mode === "nw" || mode === "sw" || mode === "w") left = pointer.x;
+  if (mode === "ne" || mode === "se" || mode === "e") right = pointer.x;
+  if (mode === "nw" || mode === "ne" || mode === "n") top = pointer.y;
+  if (mode === "sw" || mode === "se" || mode === "s") bottom = pointer.y;
+  if (right - left < minW) {
+    if (mode === "nw" || mode === "sw" || mode === "w") left = right - minW;
+    else right = left + minW;
+  }
+  if (bottom - top < minH) {
+    if (mode === "nw" || mode === "ne" || mode === "n") top = bottom - minH;
+    else bottom = top + minH;
+  }
+  const [x1, y1] = view.convertToPdfPoint(left, top);
+  const [x2, y2] = view.convertToPdfPoint(right, bottom);
+  return clampQuad(
+    { x: Math.min(x1, x2), y: Math.min(y1, y2), w: Math.abs(x2 - x1), h: Math.abs(y2 - y1) },
+    view,
+  );
 }
 
-function CornerHandle({
-  corner,
+function ResizeHandle({
+  edge,
   onPointerDown,
 }: {
-  corner: Corner;
+  edge: ResizeEdge;
   onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
 }) {
-  const place =
-    corner === "nw"
-      ? { left: -6, top: -6 }
-      : corner === "ne"
-        ? { right: -6, top: -6 }
-        : corner === "sw"
-          ? { left: -6, bottom: -6 }
-          : { right: -6, bottom: -6 };
+  const corner = edge.length === 2;
   return (
     <div
       data-handle="true"
-      data-resize={corner}
+      data-resize={edge}
       role="button"
       aria-label="Resize callout"
-      className="absolute z-10 h-3 w-3 border-2 border-black bg-white"
-      style={place}
+      className={corner ? "quire-callout-corner" : "quire-callout-edge"}
       onPointerDown={onPointerDown}
     />
   );
@@ -577,10 +590,12 @@ function clampQuad(
 function Handle({
   x,
   y,
+  r = 7,
   onPointerDown,
 }: {
   x: number;
   y: number;
+  r?: number;
   onPointerDown: (event: ReactPointerEvent<SVGCircleElement>) => void;
 }) {
   return (
@@ -588,7 +603,7 @@ function Handle({
       data-handle="true"
       cx={x}
       cy={y}
-      r={7}
+      r={r}
       fill="#fff"
       stroke="#000"
       strokeWidth={2}

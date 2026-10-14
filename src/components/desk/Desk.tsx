@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import {
+  ArrowLeftRight,
   ArrowUpRight,
   BookOpen,
   FileDown,
@@ -158,6 +159,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const stayRef = useRef(false);
   const joinRef = useRef(false);
   const paidRef = useRef(studio);
+  const pendingMate = useRef<File | null>(null);
   const applyRef = useRef<(kind: "highlight" | "underline" | "strikeout") => boolean>(() => false);
 
   marksRef.current = marks;
@@ -751,6 +753,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   }
 
   function requestOpen(next: File | "sample") {
+    pendingMate.current = null;
     if (next !== "sample" && !isPdf(next)) {
       setError("Choose a PDF.");
       return;
@@ -777,6 +780,39 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     }
     const bytes = new Uint8Array(await next.arrayBuffer());
     await loadBytes(next.name, bytes);
+  }
+
+  function receiveFiles(list: FileList | File[]) {
+    const pdfs = [...list].filter(isPdf);
+    if (!pdfs.length) {
+      setError("Choose a PDF.");
+      return;
+    }
+    if (!paidRef.current) {
+      setPassError("");
+      setStatus("Enter the passcode before opening a PDF.");
+      if (pdfRef.current) setGate("open");
+      else document.getElementById("quire-passcode")?.focus();
+      return;
+    }
+    if (pdfs.length >= 2) {
+      if (marksRef.current.length > 0) {
+        pendingMate.current = pdfs[1];
+        setPending(pdfs[0]);
+        return;
+      }
+      void openBilingual(pdfs[0], pdfs[1]);
+      return;
+    }
+    requestOpen(pdfs[0]);
+  }
+
+  async function openBilingual(source: File, target: File) {
+    mateIntent.current = "bilingual";
+    const previous = pdfRef.current;
+    await beginOpen(source);
+    if (!pdfRef.current || pdfRef.current === previous) return;
+    await loadMate(target);
   }
 
   async function exportPdf() {
@@ -833,6 +869,76 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     const bilingual = pairKind === "bilingual";
     dropMate();
     setStatus(bilingual ? "Bilingual closed. Marks are still on this file." : "Compare closed. Marks are still on this file.");
+  }
+
+  async function swapPdfs() {
+    const left = pdfRef.current;
+    const right = mateDocRef.current;
+    const leftBytes = bytesRef.current;
+    if (!left || !right || !leftBytes || !fileName || mateBusy) return;
+    setMateBusy(true);
+    setError("");
+    try {
+      const leftKey = sessionKey ?? (await fingerprint(leftBytes));
+      await saveSession(leftKey, {
+        name: fileName,
+        marks: marksRef.current,
+        importedSourceIds: importedRef.current,
+        savedAt: Date.now(),
+      });
+      const rightKey = await fingerprint(right.bytes);
+      const session = await loadSession(rightKey);
+      let nextMarks = session?.marks ?? [];
+      let nextImported = session?.importedSourceIds ?? [];
+      if (!session) {
+        const parsed = await readExisting(right.pdf);
+        nextMarks = parsed.marks;
+        nextImported = parsed.ids;
+      }
+      const moved: MateDoc = {
+        pdf: left,
+        name: fileName,
+        numPages,
+        baseWidth,
+        bytes: leftBytes,
+      };
+      bytesRef.current = right.bytes;
+      pdfRef.current = right.pdf;
+      mateDocRef.current = moved;
+      marksRef.current = nextMarks;
+      importedRef.current = nextImported;
+      setPdf(right.pdf);
+      setFileName(right.name);
+      setNumPages(right.numPages);
+      setBaseWidth(right.baseWidth);
+      setMate(moved);
+      setPage(matePage);
+      setMatePage(page);
+      setScale(mateScale);
+      setMateScale(scale);
+      setMarks(nextMarks);
+      setImported(nextImported);
+      setSessionKey(rightKey);
+      undoRef.current = [];
+      redoRef.current = [];
+      noteDirty.current = false;
+      noteSnapshot.current = null;
+      viewports.current.clear();
+      setActiveId(null);
+      setHits([]);
+      setFigureReport(null);
+      targetMarksRef.current = [];
+      setTargetMarks([]);
+      setStatus(
+        pairKind === "bilingual"
+          ? "Swapped. This file is now the source."
+          : "Swapped. Marks stay on this file.",
+      );
+    } catch {
+      setError("The two PDFs could not be swapped.");
+    } finally {
+      setMateBusy(false);
+    }
   }
 
   function askSecond(kind: "compare" | "bilingual") {
@@ -1148,16 +1254,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       onDrop={(event) => {
         event.preventDefault();
         setDragOver(false);
-        const file = event.dataTransfer.files?.[0];
-        if (!file) return;
-        if (!paidRef.current) {
-          setPassError("");
-          setStatus("Enter the passcode before opening a PDF.");
-          if (pdfRef.current) setGate("open");
-          else document.getElementById("quire-passcode")?.focus();
-          return;
-        }
-        requestOpen(file);
+        const files = event.dataTransfer.files;
+        if (!files?.length) return;
+        receiveFiles(files);
       }}
     >
       <header className="shrink-0 border-b border-line-dark">
@@ -1179,6 +1278,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
               if (pdfRef.current) setGate("open");
               else document.getElementById("quire-passcode")?.focus();
             }}
+            title="Open one PDF, or two. Two files open in bilingual mode. The first is the source."
             className="quire-file inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-brass px-3 text-sm text-paper"
           >
             <Upload size={16} strokeWidth={1.75} />
@@ -1512,7 +1612,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
               {marks.length === 0 && (
                 <p className="mb-4 text-center text-sm text-muted">
                   {tool === "callout"
-                    ? "Press where it should point, then drag the box into place. Select it and drag a corner to change the size. The dot moves the point."
+                    ? "Press where it should point, then drag the box into place. Select it and drag the bar to move the box and the point together. Drag an edge or a corner to resize. The dot moves only the point."
                     : tool === "arrow"
                       ? "Drag the arrow. Select it, then drag the line or either end."
                       : tool === "select"
@@ -1565,6 +1665,16 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                 scrollerRef={rightScrollRef}
                 extra={
                   <>
+                    <button
+                      type="button"
+                      title="Swap the two PDFs. The file on the right becomes the source."
+                      disabled={mateBusy}
+                      onClick={() => void swapPdfs()}
+                      className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+                    >
+                      <ArrowLeftRight size={16} strokeWidth={1.75} />
+                      Swap
+                    </button>
                     {pairKind !== "bilingual" && (
                       <button
                         type="button"
@@ -1700,17 +1810,14 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         ref={fileRef}
         id="quire-open"
         type="file"
-        accept=".pdf"
+        accept=".pdf,application/pdf"
+        multiple
         className="sr-only"
         onChange={(event) => {
-          const file = event.target.files?.[0];
+          const files = [...(event.target.files ?? [])];
           event.target.value = "";
-          if (!file) return;
-          if (!paidRef.current) {
-            setStatus("Enter the passcode before opening a PDF.");
-            return;
-          }
-          requestOpen(file);
+          if (!files.length) return;
+          receiveFiles(files);
         }}
       />
       <input
@@ -1829,12 +1936,19 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
               Marks on this file stay in this browser. They are not uploaded.
             </p>
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setPending(null)} className="h-11 rounded-md px-4 text-sm text-ink">
+              <button type="button" onClick={() => { pendingMate.current = null; setPending(null); }} className="h-11 rounded-md px-4 text-sm text-ink">
                 Stay
               </button>
               <button
                 type="button"
-                onClick={() => void beginOpen(pending)}
+                onClick={() => {
+                  const file = pending;
+                  const mate = pendingMate.current;
+                  pendingMate.current = null;
+                  setPending(null);
+                  if (file && file !== "sample" && mate) void openBilingual(file, mate);
+                  else if (file) void beginOpen(file);
+                }}
                 className="h-11 rounded-md bg-brass px-4 text-sm text-paper"
               >
                 Open
