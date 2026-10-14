@@ -20,6 +20,8 @@ function mimeHandler(): MimeHandlerApi | null {
 }
 
 export function chromeMimeAvailable(): boolean {
+  const path = typeof location === "undefined" ? "" : location.pathname;
+  if (!path.endsWith("/viewer.html") && !path.endsWith("viewer.html")) return false;
   return !!mimeHandler()?.getStreamInfo;
 }
 

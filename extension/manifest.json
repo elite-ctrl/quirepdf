@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Quire",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Proofread a PDF in Chrome. The file stays on this computer.",
   "minimum_chrome_version": "151",
   "action": {
@@ -22,11 +22,11 @@
   },
   "mime_types_handler": {
     "application/pdf": {
-      "handler_url": "index.html",
-      "can_embed": true
+      "handler_url": "viewer.html",
+      "can_embed": false
     }
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; worker-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   }
 }

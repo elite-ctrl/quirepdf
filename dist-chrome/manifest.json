@@ -23,7 +23,7 @@
   "mime_types_handler": {
     "application/pdf": {
       "handler_url": "index.html",
-      "can_embed": true
+      "can_embed": false
     }
   },
   "content_security_policy": {

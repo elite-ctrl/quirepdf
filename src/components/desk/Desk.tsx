@@ -44,7 +44,7 @@ import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@
 import { buildSamplePdf } from "@/lib/sample-pdf";
 import { fingerprint, loadSession, saveSession } from "@/lib/session";
 import { fetchLaunchedPdf } from "@/lib/launch-pdf";
-import { chromeMimeAvailable, fallbackToChromeViewer, fetchChromePdf } from "@/lib/chrome-pdf";
+import { chromeMimeAvailable, fetchChromePdf } from "@/lib/chrome-pdf";
 import { tryPasscode, unlockStored } from "@/lib/passcode";
 import { notePasscode } from "@/lib/report";
 import { Usage } from "@/components/desk/Usage";
@@ -739,7 +739,10 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       bumpHistory();
     } catch (err) {
       if (ticket !== openTicket.current) return;
-      if (source === "chrome") fallbackToChromeViewer();
+      if (source === "chrome" && error && typeof error === "object" && "name" in error && (error as { name: string }).name === "PasswordException") {
+        const { fallbackToChromeViewer } = await import("@/lib/chrome-pdf");
+        fallbackToChromeViewer();
+      }
       setError(messageFrom(err));
       setStatus("");
     } finally {

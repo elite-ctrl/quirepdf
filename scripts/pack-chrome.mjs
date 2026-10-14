@@ -39,8 +39,10 @@ for size in (16, 48, 128):
 await run("npx", ["vite", "build", "--config", "vite.portable.config.ts"]);
 
 const nested = resolve(built, "portable/index.html");
-const html = (await readFile(nested, "utf8")).replaceAll("../assets/", "./assets/");
+const html = (await readFile(nested, "utf8")).replaceAll("../assets/", "./assets/").replaceAll(" crossorigin", "");
 await writeFile(resolve(built, "index.html"), html);
+await writeFile(resolve(built, "desk.html"), html);
+await writeFile(resolve(built, "viewer.html"), html);
 await rm(nested);
 await rm(resolve(built, "portable"), { recursive: true });
 
@@ -64,7 +66,13 @@ dest = Path(${JSON.stringify(zipPath)})
 with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as z:
     for path in root.rglob("*"):
         if path.is_file():
-            z.write(path, path.relative_to(root).as_posix())
+            z.write(path, Path("Quire") / path.relative_to(root))
 print(dest, dest.stat().st_size)
+need = ["Quire/manifest.json", "Quire/desk.html", "Quire/viewer.html", "Quire/background.js"]
+names = set(zipfile.ZipFile(dest).namelist())
+missing = [n for n in need if n not in names]
+if missing:
+    raise SystemExit("missing " + ", ".join(missing))
+
 `,
 ]);

@@ -25,9 +25,19 @@ export function loadPdfjs() {
   return loading;
 }
 
+function assetRoot(): string {
+  const runtime = (globalThis as { chrome?: { runtime?: { id?: string; getURL?: (path: string) => string } } }).chrome?.runtime;
+  if (runtime?.id && runtime.getURL) {
+    const root = runtime.getURL("");
+    return root.endsWith("/") ? root : `${root}/`;
+  }
+  const base = import.meta.env.BASE_URL || "/";
+  return base.endsWith("/") ? base : `${base}/`;
+}
+
 export async function openPdf(bytes: Uint8Array): Promise<PdfDoc> {
   const pdfjs = await loadPdfjs();
-  const base = import.meta.env.BASE_URL || "/";
+  const base = assetRoot();
   const task = pdfjs.getDocument({
     data: bytes.slice(0),
     cMapUrl: `${base}pdfjs/cmaps/`,
