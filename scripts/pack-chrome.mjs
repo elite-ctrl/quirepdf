@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const built = resolve(root, "dist-portable");
 const stage = resolve(root, "dist-chrome");
-const zipPath = resolve(root, "artifacts/quire-chrome.zip");
+const zipPath = resolve(root, "artifacts/quire-extension.zip");
 
 function run(command, args, cwd = root) {
   return new Promise((resolveRun, reject) => {
@@ -36,7 +36,7 @@ for size in (16, 48, 128):
 `,
 ]);
 
-await run("npx", ["vite", "build", "--config", "vite.portable.config.ts"]);
+await run("npx", ["vite", "build", "--config", "vite.extension.config.ts"]);
 
 const nested = resolve(built, "portable/index.html");
 const html = (await readFile(nested, "utf8")).replaceAll("../assets/", "./assets/").replaceAll(" crossorigin", "");
@@ -52,6 +52,7 @@ await cp(built, stage, { recursive: true });
 await cp(resolve(root, "extension/manifest.json"), resolve(stage, "manifest.json"));
 await cp(resolve(root, "extension/background.js"), resolve(stage, "background.js"));
 await cp(resolve(root, "extension/README.txt"), resolve(stage, "README.txt"));
+await cp(resolve(root, "extension/LICENSE.txt"), resolve(stage, "LICENSE.txt"));
 await cp(resolve(root, "extension/icons"), resolve(stage, "icons"), { recursive: true });
 await rm(resolve(stage, "__grok"), { recursive: true, force: true });
 
@@ -69,7 +70,7 @@ with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as z:
         if path.is_file():
             z.write(path, Path("Quire") / path.relative_to(root))
 print(dest, dest.stat().st_size)
-need = ["Quire/manifest.json", "Quire/desk.html", "Quire/viewer.html", "Quire/background.js"]
+need = ["Quire/manifest.json", "Quire/desk.html", "Quire/viewer.html", "Quire/background.js", "Quire/LICENSE.txt"]
 names = set(zipfile.ZipFile(dest).namelist())
 missing = [n for n in need if n not in names]
 if missing:

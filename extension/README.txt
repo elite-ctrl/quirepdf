@@ -1,17 +1,18 @@
-Install Quire for Chrome
+Quire for Chrome
 
-1. Unzip this folder. You get one folder named Quire.
-2. Open chrome://extensions
-3. Remove any older Quire.
-4. Turn on Developer mode.
-5. Drag the Quire folder onto that page, or choose Load unpacked and select Quire.
-   The folder you drag must contain manifest.json and desk.html together.
+This is the standalone extension. It does not include the usage report.
+The passcode is not written in these files. Nothing is uploaded.
+
+Install
+1. Unzip. Open the Quire folder. It contains manifest.json and desk.html.
+2. Open chrome://extensions and remove any older Quire.
+3. Turn on Developer mode.
+4. Drag that folder onto the page, or choose Load unpacked.
    Do not drag icons, assets, or pdfjs.
-6. Click the Quire icon. A new tab opens. That is the desk.
-7. Chrome 151 or newer also opens a full-page PDF in Quire.
+5. Click the Quire icon.
 
-The first PDF on this browser still needs your passcode. This browser remembers it after that.
-There is no Grok login.
-Your PDFs and marks stay on this computer. Nothing is uploaded.
+Chrome 151 or newer can also open a full-page PDF in Quire.
+The first PDF on this browser still needs the passcode. This browser remembers it.
 
-To remove Quire, click Remove on chrome://extensions.
+Copyright. All rights reserved. Do not copy or republish this extension.
+See LICENSE.txt.

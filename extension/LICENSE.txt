@@ -1,0 +1,9 @@
+Quire
+Copyright. All rights reserved.
+
+This extension is licensed, not given away.
+You may install the official package for your own proofreading.
+You may not copy the code, publish it again, or offer it as your own.
+
+The passcode is not stored in these files.
+PDFs and marks stay on this computer. This package does not send a usage report.

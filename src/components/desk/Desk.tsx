@@ -180,7 +180,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     const stored = unlockStored();
     paidRef.current = stored;
     setPaid(stored);
-    if (stored) notePasscode("");
+    if (stored && !portable) notePasscode("");
   }, [studio]);
 
   useEffect(() => {
@@ -1008,14 +1008,18 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   }
 
   function submitPasscode(openFile = false) {
-    const ok = tryPasscode(passInput);
+    void acceptPasscode(openFile);
+  }
+
+  async function acceptPasscode(openFile: boolean) {
+    const ok = await tryPasscode(passInput);
     if (!ok) {
       setPassError("That passcode is not recognised.");
       return;
     }
     paidRef.current = true;
     setPaid(true);
-    notePasscode(passInput);
+    if (!portable) notePasscode(passInput);
     const next = gate;
     setGate(null);
     setPassInput("");
@@ -1618,9 +1622,15 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       </div>
 
       <footer className="flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-t border-line-dark px-3 text-sm text-muted">
-        <button type="button" onClick={() => setUsageOpen(true)} className="h-11 shrink-0 rounded-md px-2 text-paper">
-          Usage
-        </button>
+        {portable ? (
+          <span className="shrink-0 text-paper" title="Licensed copy. Do not copy or republish this extension.">
+            © Quire
+          </span>
+        ) : (
+          <button type="button" onClick={() => setUsageOpen(true)} className="h-11 shrink-0 rounded-md px-2 text-paper">
+            Usage
+          </button>
+        )}
         {studio && <span className="shrink-0 text-paper">Studio</span>}
         {pdf && (
           <>
@@ -1716,7 +1726,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         }}
       />
 
-      {usageOpen && <Usage onClose={() => setUsageOpen(false)} />}
+      {!portable && usageOpen && <Usage onClose={() => setUsageOpen(false)} />}
 
       {gate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4">

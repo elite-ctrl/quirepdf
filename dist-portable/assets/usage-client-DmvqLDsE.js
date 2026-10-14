@@ -1,0 +1,1 @@
+function e(e){return Promise.resolve({ok:!0})}export{e as noteUnlock};
