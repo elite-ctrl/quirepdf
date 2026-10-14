@@ -53,6 +53,7 @@ await cp(resolve(root, "extension/manifest.json"), resolve(stage, "manifest.json
 await cp(resolve(root, "extension/background.js"), resolve(stage, "background.js"));
 await cp(resolve(root, "extension/README.txt"), resolve(stage, "README.txt"));
 await cp(resolve(root, "extension/icons"), resolve(stage, "icons"), { recursive: true });
+await rm(resolve(stage, "__grok"), { recursive: true, force: true });
 
 await mkdir(dirname(zipPath), { recursive: true });
 await rm(zipPath, { force: true });
