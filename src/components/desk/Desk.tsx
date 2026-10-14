@@ -44,6 +44,7 @@ import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@
 import { buildSamplePdf } from "@/lib/sample-pdf";
 import { fingerprint, loadSession, saveSession } from "@/lib/session";
 import { fetchLaunchedPdf } from "@/lib/launch-pdf";
+import { chromeMimeAvailable, fallbackToChromeViewer, fetchChromePdf } from "@/lib/chrome-pdf";
 import { tryPasscode, unlockStored } from "@/lib/passcode";
 import { notePasscode } from "@/lib/report";
 import { Usage } from "@/components/desk/Usage";
@@ -126,7 +127,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [passInput, setPassInput] = useState("");
   const [passError, setPassError] = useState("");
   const [heldName, setHeldName] = useState("");
-  const heldLaunch = useRef<{ name: string; bytes: Uint8Array } | null>(null);
+  const heldLaunch = useRef<{ name: string; bytes: Uint8Array; source?: "file" | "chrome" } | null>(null);
 
   const singleScrollRef = useRef<HTMLDivElement>(null);
   const leftScrollRef = useRef<HTMLDivElement>(null);
@@ -183,16 +184,18 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   }, [studio]);
 
   useEffect(() => {
-    if (!portable || window.location.hash !== "#launch") return;
+    if (!portable) return;
+    const launch = window.location.hash === "#launch";
+    if (!launch && !chromeMimeAvailable()) return;
     let cancel = false;
     void (async () => {
-      const launched = await fetchLaunchedPdf();
+      const launched = launch ? await fetchLaunchedPdf() : await fetchChromePdf();
       if (!launched || cancel) return;
       if (studio || paidRef.current || unlockStored()) {
-        await loadBytes(launched.name, launched.bytes);
+        await loadBytes(launched.name, launched.bytes, launch ? "file" : "chrome");
         return;
       }
-      heldLaunch.current = launched;
+      heldLaunch.current = { name: launched.name, bytes: launched.bytes, source: launch ? "file" : "chrome" };
       setHeldName(launched.name);
       setStatus(`${launched.name} is waiting. Enter the passcode.`);
     })();
@@ -668,7 +671,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     setHitIndex((current) => (current + direction + hits.length) % hits.length);
   }
 
-  async function loadBytes(name: string, bytes: Uint8Array) {
+  async function loadBytes(name: string, bytes: Uint8Array, source: "file" | "chrome" = "file") {
     const ticket = ++openTicket.current;
     setBusy(true);
     setError("");
@@ -736,6 +739,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       bumpHistory();
     } catch (err) {
       if (ticket !== openTicket.current) return;
+      if (source === "chrome") fallbackToChromeViewer();
       setError(messageFrom(err));
       setStatus("");
     } finally {
@@ -1018,7 +1022,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     if (held) {
       setHeldName("");
       setGate(null);
-      void loadBytes(held.name, held.bytes);
+      void loadBytes(held.name, held.bytes, held.source ?? "file");
       return;
     }
     setStatus("Passcode accepted. Choose the PDF.");
