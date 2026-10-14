@@ -16,6 +16,7 @@ import {
   Plus,
   Redo2,
   Search,
+  SpellCheck,
   Strikethrough,
   Underline,
   Undo2,
@@ -24,6 +25,7 @@ import {
 import { PdfPage, type ShapePlace } from "@/components/desk/PdfPage";
 import { Rail } from "@/components/desk/Rail";
 import { joinCopiedLines } from "@/lib/copy-text";
+import { grammarMarks } from "@/lib/grammar";
 import { selectionOnPage, type ViewportLike } from "@/lib/geometry";
 import { downloadBlob, marksToMarkdown, safeStem } from "@/lib/markdown";
 import {
@@ -105,6 +107,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState<"pdf" | "changes" | "target" | null>(null);
   const [comparing, setComparing] = useState(false);
+  const [grammarBusy, setGrammarBusy] = useState(false);
   const [pairKind, setPairKind] = useState<"compare" | "bilingual" | null>(null);
   const [figureReport, setFigureReport] = useState<PairCheck[] | null>(null);
   const [figureBusy, setFigureBusy] = useState(false);
@@ -918,6 +921,30 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     }
   }
 
+  async function checkGrammar() {
+    const current = pdfRef.current;
+    if (!current || grammarBusy || !paidRef.current) return;
+    setGrammarBusy(true);
+    setError("");
+    setStatus("Checking English grammar…");
+    try {
+      const found = await grammarMarks(current);
+      const kept = marksRef.current.filter((mark) => !mark.id.startsWith("grammar-"));
+      commitNoteHistory();
+      commit([...kept, ...found], true);
+      const count = found.filter((mark) => mark.kind === "callout").length;
+      if (found[0]) {
+        setActiveId(found[0].id);
+        setRailOpen(true);
+      }
+      setStatus(count ? `Marked ${count} English grammar ${count === 1 ? "point" : "points"}.` : "No English grammar points.");
+    } catch {
+      setError("English grammar could not be checked.");
+    } finally {
+      setGrammarBusy(false);
+    }
+  }
+
   async function exportChanges() {
     if (!paidRef.current) {
       setPassError("");
@@ -1183,6 +1210,17 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
               </button>
               <button
                 type="button"
+                onClick={() => void checkGrammar()}
+                disabled={grammarBusy}
+                aria-label="English grammar"
+                title="English grammar and spelling on this file. British English. Chinese is left alone. The check stays on this computer."
+                className="inline-flex h-11 shrink-0 items-center gap-2 rounded-md bg-raised px-3 text-sm text-paper disabled:opacity-40"
+              >
+                <SpellCheck size={16} strokeWidth={1.75} />
+                {grammarBusy ? "Checking…" : "Grammar"}
+              </button>
+              <button
+                type="button"
                 onClick={() => setRailOpen((open) => !open)}
                 aria-pressed={railOpen}
                 aria-label="Marks"
@@ -1445,7 +1483,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                       ? "Studio copy. No passcode while the desk is being changed. The customer version still asks for one."
                       : heldName
                         ? `${heldName} is waiting. Enter the passcode to open it.`
-                        : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Bilingual opens the other language, then figures and dates can be checked.`}
+                        : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Bilingual opens the other language, then figures and dates can be checked. Grammar checks British English, including spelling.`}
                   </p>
                   {error && (
                     <p className="mt-4 text-sm text-paper" role="alert">
