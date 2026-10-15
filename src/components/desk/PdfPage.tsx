@@ -101,9 +101,10 @@ export function PdfPage({
   useEffect(() => {
     if (!near) return;
     let cancel = false;
+    setBase(null);
     void pdf.getPage(pageNumber).then((page) => {
       if (cancel) return;
-      const view = page.getViewport({ scale: 1 });
+      const view = page.getViewport({ scale: 1, rotation: page.rotate });
       setBase({ w: view.width, h: view.height });
     });
     return () => {
@@ -127,7 +128,7 @@ export function PdfPage({
       if (job.cancel) return;
       const page = await pdf.getPage(pageNumber);
       if (job.cancel) return;
-      const view = page.getViewport({ scale });
+      const view = page.getViewport({ scale, rotation: page.rotate });
       setViewport(view);
       viewportRef.current = view;
       onViewportRef.current(pageNumber, view);
@@ -136,6 +137,7 @@ export function PdfPage({
       const ratio = window.devicePixelRatio || 1;
       canvas.width = Math.floor(view.width * ratio);
       canvas.height = Math.floor(view.height * ratio);
+      context.setTransform(1, 0, 0, 1, 0, 0);
       const renderTask = page.render({
         canvas,
         viewport: view,
@@ -149,6 +151,10 @@ export function PdfPage({
         return;
       }
       textEl.replaceChildren();
+      textEl.removeAttribute("data-main-rotation");
+      textEl.style.removeProperty("width");
+      textEl.style.removeProperty("height");
+      textEl.style.removeProperty("transform");
       const textContent = await page.getTextContent();
       if (job.cancel) {
         renderTask.cancel();

@@ -67,6 +67,19 @@ type MateDoc = {
   bytes: Uint8Array;
 };
 
+const docIds = new WeakMap<PdfDoc, string>();
+let docSerial = 0;
+
+function docKey(doc: PdfDoc) {
+  let id = docIds.get(doc);
+  if (!id) {
+    docSerial += 1;
+    id = `d${docSerial}`;
+    docIds.set(doc, id);
+  }
+  return id;
+}
+
 function nearestPage(el: HTMLElement) {
   const rootTop = el.getBoundingClientRect().top + 32;
   let best = 0;
@@ -1213,7 +1226,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     const prefix = side === "work" ? "a" : "b";
     return numbers.map((pageNumber, index) => (
       <PdfPage
-        key={`${side}-${pageNumber}`}
+        key={`${docKey(doc)}-${pageNumber}`}
         pdf={doc}
         pageNumber={pageNumber}
         scale={pageScale}
@@ -1518,7 +1531,10 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                     Nothing is uploaded. Marked PDF downloads only the pages you marked, for Acrobat or Preview. Or take a comment sheet.
                   </p>
                   <div className="mt-6">
-                    {!studio && !paid && (
+                    {import.meta.env.VITE_STUDIO
+                      ? null
+                      : !studio &&
+                        !paid && (
                       <form
                         onSubmit={(event) => {
                           event.preventDefault();
@@ -1591,7 +1607,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                   </div>
                   <p className="mt-6 max-w-lg text-sm text-pretty text-muted">
                     {studio
-                      ? "Studio copy. No passcode while the desk is being changed. The customer version still asks for one."
+                      ? portable
+                        ? "Studio copy. No passcode. Mark the source beside the target. The file stays on this computer."
+                        : "Studio copy. No passcode while the desk is being changed. The customer version still asks for one."
                       : heldName
                         ? `${heldName} is waiting. Enter the passcode to open it.`
                         : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Bilingual opens the other language, then figures and dates can be checked. Grammar checks British English, including spelling.`}
@@ -1733,7 +1751,10 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
 
       <footer className="flex h-14 shrink-0 items-center gap-2 overflow-x-auto border-t border-line-dark px-3 text-sm text-muted">
         {portable ? (
-          <span className="shrink-0 text-paper" title="Licensed copy. Do not copy or republish this extension.">
+          <span
+            className="shrink-0 text-paper"
+            title={studio ? "Studio copy. No passcode." : "Licensed copy. Do not copy or republish this extension."}
+          >
             © Quire
           </span>
         ) : (
@@ -1835,7 +1856,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
 
       {!portable && usageOpen && <Usage onClose={() => setUsageOpen(false)} />}
 
-      {gate && (
+      {import.meta.env.VITE_STUDIO
+        ? null
+        : gate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/50 p-4">
           <form
             className="w-full max-w-sm rounded-md bg-paper p-5 text-ink"
