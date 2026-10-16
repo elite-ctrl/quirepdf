@@ -410,6 +410,7 @@ export function PdfPage({
                   return (
                     <g
                       key={mark.id}
+                      id={`quire-mark-${mark.id}`}
                       className="quire-mark"
                       onPointerDown={(event) => {
                         if (tool !== "select") return;
@@ -473,6 +474,7 @@ export function PdfPage({
                 return (
                   <div
                     key={mark.id}
+                    id={`quire-mark-${mark.id}`}
                     className={`quire-callout absolute overflow-hidden px-2 py-1${active ? " is-selected" : ""}`}
                     style={{
                       left: view.left,

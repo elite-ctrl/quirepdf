@@ -309,9 +309,27 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
 
   useEffect(() => {
     if (!activeId || !railOpen) return;
+    if (!marksRef.current.some((mark) => mark.id === activeId)) return;
     const handle = window.requestAnimationFrame(() => noteRef.current?.focus());
     return () => window.cancelAnimationFrame(handle);
   }, [activeId, railOpen]);
+
+  useEffect(() => {
+    if (!activeId) return;
+    let tries = 0;
+    let timer = 0;
+    const go = () => {
+      const spot = document.getElementById(`quire-mark-${activeId}`);
+      if (spot) {
+        spot.scrollIntoView({ block: "center", inline: "nearest" });
+        return;
+      }
+      tries += 1;
+      if (tries < 12) timer = window.setTimeout(go, 100);
+    };
+    timer = window.setTimeout(go, 60);
+    return () => window.clearTimeout(timer);
+  }, [activeId]);
 
   useEffect(() => {
     if (!pdf) return;
@@ -465,8 +483,14 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     setActiveId(id);
     setRailOpen(true);
     if (!scroll) return;
-    const mark = marksRef.current.find((item) => item.id === id);
-    if (mark) document.getElementById(`quire-page-a-${mark.page}`)?.scrollIntoView({ block: "center", inline: "nearest" });
+    const onTarget = targetMarksRef.current.some((item) => item.id === id);
+    const mark = (onTarget ? targetMarksRef.current : marksRef.current).find((item) => item.id === id);
+    if (!mark) return;
+    const side = onTarget ? "b" : "a";
+    const page = document.getElementById(`quire-page-${side}-${mark.page}`);
+    const spot = document.getElementById(`quire-mark-${id}`);
+    (spot ?? page)?.scrollIntoView({ block: "center", inline: "nearest" });
+    document.getElementById(`quire-note-${id}`)?.scrollIntoView({ block: "nearest" });
   }
 
   function applyLiveSelection(kind: "highlight" | "underline" | "strikeout") {
@@ -1171,7 +1195,11 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       targetMarksRef.current = marked;
       setTargetMarks(marked);
       const first = marked[0];
-      if (first) jumpTo("b", String(first.page));
+      if (first) {
+        setRailOpen(true);
+        setActiveId(first.id);
+        jumpTo("b", String(first.page));
+      }
       setStatus(marked.length ? `Marked ${marked.length} on the target.` : "Source and target match.");
     } catch {
       setError("Figures and dates could not be checked.");
@@ -1213,12 +1241,12 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         marks={side === "work" ? marks : targetMarks}
         hits={side === "work" ? hits : []}
         activeHit={side === "work" ? hitIndex : -1}
-        activeId={side === "work" ? activeId : null}
-        tool={side === "work" ? tool : "highlight"}
+        activeId={activeId}
+        tool={side === "work" ? tool : "select"}
         eager={index === 0}
         pane={side}
         domId={`quire-page-${prefix}-${pageNumber}`}
-        onPick={side === "work" ? (id) => pickMark(id, false) : () => {}}
+        onPick={(id) => pickMark(id, false)}
         onPlace={side === "work" ? placeShape : undefined}
         onGestureStart={side === "work" ? gestureStart : undefined}
         onGestureMove={side === "work" ? gestureMove : undefined}
@@ -1716,6 +1744,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         {pdf && railOpen && (
           <Rail
             marks={marks}
+            remarks={pairKind === "bilingual" ? targetMarks : []}
             activeId={activeId}
             noteRef={noteRef}
             onClose={() => setRailOpen(false)}

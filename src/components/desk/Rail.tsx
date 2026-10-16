@@ -17,6 +17,7 @@ type KindFilter = "all" | Kind;
 
 type Props = {
   marks: Mark[];
+  remarks?: Mark[];
   activeId: string | null;
   noteRef: RefObject<HTMLTextAreaElement | null>;
   onClose: () => void;
@@ -30,6 +31,7 @@ type Props = {
 
 export function Rail({
   marks,
+  remarks = [],
   activeId,
   noteRef,
   onClose,
@@ -43,6 +45,7 @@ export function Rail({
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
   const [armed, setArmed] = useState(false);
   const sorted = sortMarks(marks);
+  const remarkList = sortMarks(remarks);
   const filtered = sorted.filter((mark) => {
     if (kindFilter !== "all" && mark.kind !== kindFilter) return false;
     return true;
@@ -164,7 +167,38 @@ export function Rail({
       )}
 
       <ul className="min-h-0 flex-1 overflow-auto px-3 py-3">
-        {filtered.length === 0 && (
+        {remarkList.length > 0 && (
+          <li className="mb-3">
+            <p className="px-1 pb-2 text-sm text-muted">
+              Figures and dates
+              <span className="ml-2 tabular-nums">{remarkList.length}</span>
+            </p>
+            <ul>
+              {remarkList.map((mark) => (
+                <li key={mark.id} className="mb-2">
+                  <button
+                    type="button"
+                    id={`quire-note-${mark.id}`}
+                    onClick={() => onPick(mark.id)}
+                    aria-current={mark.id === activeId}
+                    className={`w-full rounded-md border px-3 py-3 text-left ${mark.id === activeId ? "border-brass bg-raised" : "border-line-dark bg-desk hover:bg-raised"}`}
+                    style={{ borderLeftWidth: 3, borderLeftColor: `var(--color-${mark.ink})` }}
+                  >
+                    <span className="flex items-baseline justify-between gap-3 text-sm text-muted">
+                      <span>Target</span>
+                      <span className="tabular-nums">p. {mark.page}</span>
+                    </span>
+                    <span className="mt-1 block text-sm text-pretty text-paper">{mark.note || mark.quote || "Difference"}</span>
+                    {mark.quote && mark.note && (
+                      <span className="mt-1 block line-clamp-2 text-sm text-muted">{mark.quote}</span>
+                    )}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </li>
+        )}
+        {filtered.length === 0 && remarkList.length === 0 && (
           <li className="px-1 py-6 text-sm text-pretty text-muted">
             {marks.length === 0
               ? "No marks yet. Highlight a line, or drag a callout or an arrow."

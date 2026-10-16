@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Faircopy Studio",
-  "version": "1.2.1",
+  "version": "1.2.2",
   "description": "Studio desk for bilingual proofreading. No passcode. The file stays on this computer.",
   "minimum_chrome_version": "151",
   "action": {
