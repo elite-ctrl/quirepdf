@@ -190,8 +190,13 @@ test("brackets: list markers such as 1) and a) are not stray", async () => {
   assert.deepEqual(await bracketNotes(["1) first\na) second"], ["1) 第一\na) 第二"]), []);
 });
 
-test("brackets: a different number of brackets from the source is noted", async () => {
-  assert.deepEqual(await bracketNotes(["(a) (b) (c)"], ["（a）（b）"]), ["p1 -#0 Brackets: source page 1 has 3; this page has 2."]);
+test("brackets: a different number of brackets from the source is not flagged", async () => {
+  assert.deepEqual(await bracketNotes(['Mr. Wong (黃自強) ("Mr. Wong")'], ["黃先生(「黃先生」)"]), []);
+});
+
+test("brackets: a far-apart pair is not judged for width", async () => {
+  const gap = "，".repeat(200);
+  assert.deepEqual(await bracketNotes(["(a)"], [`（a${gap})`]), []);
 });
 
 test("brackets: bracket marks land on the target bracket", async () => {
