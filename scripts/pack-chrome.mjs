@@ -7,7 +7,7 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const built = resolve(root, "dist-portable");
 const stage = resolve(root, "dist-chrome");
 const zipPath = resolve(root, "artifacts/quire-extension.zip");
-const storePath = resolve(root, "artifacts/quire-webstore.zip");
+const storePath = resolve(root, "artifacts/faircopy-webstore.zip");
 
 function run(command, args, cwd = root) {
   return new Promise((resolveRun, reject) => {

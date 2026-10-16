@@ -104,22 +104,47 @@ function isCjk(char: string): boolean {
 }
 
 function tighten(piece: string): string {
-  return piece
-    .replace(/(\d)\s+(?=\d)/g, "$1")
-    .replace(/(\d)\s+(?=[,，.年月日%％])/g, "$1")
-    .replace(/([,，.年月日])\s+(?=\d)/g, "$1");
+  return piece.replace(/(\d)\s+(?=[,，.年月日%％])/g, "$1").replace(/([,，.年月日])\s+(?=\d)/g, "$1");
 }
 
 function glued(text: string, piece: string): boolean {
-  const left = text.trimEnd().at(-1) ?? "";
-  const right = piece.trimStart()[0] ?? "";
-  if (!left || !right) return false;
-  if (isCjk(left) || isCjk(right)) return true;
-  if (/\d/.test(left) && /[\d,，.%％年月日]/.test(right)) return true;
-  if (/[,，.年月日]/.test(left) && /\d/.test(right)) return true;
-  if (/[([［【]/.test(left) && /\d/.test(right)) return true;
-  if (left === "." && /\d/.test(right) && !/\d/.test(text.trimEnd().at(-2) ?? "")) return true;
+  const left = text.trimEnd();
+  const right = piece.trimStart();
+  const a = left.at(-1) ?? "";
+  const b = right[0] ?? "";
+  if (!a || !b) return false;
+  if (isCjk(a) && isCjk(b)) return true;
+  if (/\d/.test(a) && /[年月日%％]/.test(b)) return true;
+  if (/[年月日]/.test(a) && /\d/.test(b)) return true;
+  if (/\d/.test(a) && /^[,，]/.test(right)) return true;
+  if (/[,，]/.test(a) && /^\d{3}(?!\d)/.test(right)) return true;
+  const leftDigits = left.match(/\d+$/)?.[0] ?? "";
+  const rightDigits = right.match(/^\d+/)?.[0] ?? "";
+  if (leftDigits && rightDigits) return false;
+  if (/[([［【]/.test(a) && /\d/.test(b)) return true;
+  if (a === "." && /\d/.test(b) && !/\d/.test(left.at(-2) ?? "")) return true;
   return false;
+}
+
+function separate(text: string, piece: string): boolean {
+  if (!text || !piece || /\s$/.test(text) || /^\s/.test(piece)) return false;
+  return !glued(text, piece);
+}
+
+function foldDigitSpaces(text: string): { text: string; map: number[] } {
+  let chars = [...text];
+  let map = chars.map((_, index) => index);
+  for (let pass = 0; pass < 8; pass += 1) {
+    const source = chars.join("");
+    const dead = new Set<number>();
+    for (const match of source.matchAll(/(\d)\s+(?=\d(?:\s+\d)*\s*[年月日])/g)) {
+      dead.add((match.index ?? 0) + 1);
+    }
+    if (!dead.size) break;
+    chars = chars.filter((_, index) => !dead.has(index));
+    map = map.filter((_, index) => !dead.has(index));
+  }
+  return { text: chars.join(""), map };
 }
 
 function blankFurniture(text: string): string {
@@ -132,6 +157,7 @@ function blankFurniture(text: string): string {
   wipe(/\bBL:\s*\([^)]*\)(?:\s*\/\s*\([^)]*\))?/g);
   wipe(/\b\d+\s*\(W\)\s*x\s*\d+\s*\(H\)/gi);
   wipe(/\bNote\s+\d+\s+to\b/g);
+  wipe(/1st\s+Proof[\s\S]{0,160}?Pagination:\s*TBC/gi);
   return text;
 }
 
@@ -170,6 +196,10 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
     {
       re: /\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/g,
       key: (match) => iso(+match[3], +match[2], +match[1]),
+    },
+    {
+      re: /(?<!\b20\d{2}[ \t]+)\b(20\d{2})(?:[ \t]+|[ \t]*\n[ \t]*)(\d{1,2})[ \t]+(\d{1,2})(?![\d%％])/g,
+      key: (match) => iso(+match[1], +match[2], +match[3]),
     },
     {
       re: /(\d{4})\s*年\s*(\d{1,2})\s*月/g,
@@ -214,7 +244,7 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
 
   const bare = [...text].map((char, index) => (mask[index] ? " " : char)).join("");
   const figure =
-    /(?:^|[^\d.]|(?<=\D)\.)((?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(?:\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:十[亿億]|百[万萬]|[亿億]|[万萬]|million|billion|mn|bn|cents?|仙|%|％|个百分点|per\s*cent)?\)?)/gi;
+    /(?:^|[^\d.,，]|(?<=\D)\.)((?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(?:\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?:\s*(?:[\]）)]\s*)?(?:十[亿億]|百[万萬]|[亿億]|[万萬]|(?:million|billion)(?![A-Za-z])|(?:mn|bn|cents?|per\s*cent)(?![A-Za-z])|仙|%|％|个百分点))?\)?)/gi;
   for (const match of bare.matchAll(figure)) {
     const raw = match[1].replace(/\s+/g, " ").trim();
     const body = raw.replace(/[()]/g, "");
@@ -228,7 +258,11 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
     const negative = raw.startsWith("(") && raw.endsWith(")");
     const value = magnitude * scaleOf(tail) * (negative ? -1 : 1);
     const key = percentOf(tail) ? `${canonicalNumber(value)}%` : canonicalNumber(value);
-    if (!key) continue;
+    if (!key || key === "0") continue;
+    if (!key.endsWith("%") && /^-?\d+$/.test(key)) {
+      const whole = Math.abs(Number(key));
+      if (whole < 100 || (whole >= 1900 && whole <= 2100)) continue;
+    }
     const start = (match.index ?? 0) + match[0].length - match[1].length;
     tokens.push({ kind: "figure", key, raw: raw.replace(/[()]/g, ""), ...styleOf(faces, start, start + match[1].length) });
   }
@@ -385,7 +419,6 @@ async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
   };
   let text = "";
   const faces: Face[] = [];
-  let pendingSpace = false;
   const push = (piece: string, face: Face) => {
     text += piece;
     for (let index = 0; index < piece.length; index += 1) faces.push(face);
@@ -396,40 +429,70 @@ async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
     const piece = tighten(run.str.normalize("NFKC"));
     const face = faceOf(run.fontName);
     if (!piece.trim()) {
-      pendingSpace = true;
       if (run.hasEOL) push("\n", { bold: false, italic: false });
       continue;
     }
-    if (pendingSpace && text && !glued(text, piece)) push(" ", { bold: false, italic: false });
-    pendingSpace = false;
+    if (separate(text, piece)) push(" ", { bold: false, italic: false });
     push(piece, face);
     if (run.hasEOL) push("\n", { bold: false, italic: false });
   }
-  return { text: blankFurniture(text), faces };
+  const folded = foldDigitSpaces(text);
+  return { text: blankFurniture(folded.text), faces: folded.map.map((index) => faces[index] ?? { bold: false, italic: false }) };
 }
 
-function counts(pages: Map<number, Token[]>, kind: Token["kind"]): Map<string, number> {
-  const map = new Map<string, number>();
-  for (const list of pages.values()) {
-    for (const token of list) {
-      if (token.kind !== kind) continue;
-      map.set(token.key, (map.get(token.key) ?? 0) + 1);
+function isMillionRaw(raw: string): boolean {
+  return /million|百萬|百万|(?:^|[^A-Za-z])mn(?:$|[^A-Za-z])/i.test(raw);
+}
+
+function isBareCoefficient(raw: string): boolean {
+  const body = raw.replace(/[()]/g, "").trim();
+  if (/[,，%％]|million|billion|百萬|百万|十[亿億]|[亿億万萬]/i.test(body)) return false;
+  return /^(?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*\d+(?:\.\d+)?$/.test(body);
+}
+
+/** A bare coefficient and the same number written in millions are one figure when the unit glyph did not extract. */
+function presentFigures(side: Map<number, Token[]>, other: Map<number, Token[]>): Set<string> {
+  const present = keysOf(side, "figure");
+  const sideTokens = [...side.values()].flat().filter((token) => token.kind === "figure");
+  const otherTokens = [...other.values()].flat().filter((token) => token.kind === "figure");
+  for (const token of sideTokens) {
+    const value = Number(token.key);
+    if (!Number.isFinite(value) || value === 0) continue;
+    if (isBareCoefficient(token.raw)) {
+      const scaled = canonicalNumber(value * 1e6);
+      if (scaled && otherTokens.some((item) => item.key === scaled && isMillionRaw(item.raw))) present.add(scaled);
+    }
+    if (isMillionRaw(token.raw)) {
+      const coeff = canonicalNumber(value / 1e6);
+      if (coeff && otherTokens.some((item) => item.key === coeff && isBareCoefficient(item.raw))) present.add(coeff);
     }
   }
-  return map;
+  return present;
 }
 
-function extrasByPage(pages: Map<number, Token[]>, other: Map<string, number>, kind: Token["kind"]): Map<number, SideGap[]> {
-  const budget = new Map(other);
+function hasBareNumber(pages: Map<number, { text: string }>, number: string): boolean {
+  const pattern = new RegExp(`(?:^|[^\\d.,，])${number}(?![\\d.,，])`);
+  for (const value of pages.values()) {
+    if (pattern.test(value.text)) return true;
+  }
+  return false;
+}
+
+function keysOf(pages: Map<number, Token[]>, kind: Token["kind"]): Set<string> {
+  const set = new Set<string>();
+  for (const list of pages.values()) {
+    for (const token of list) {
+      if (token.kind === kind) set.add(token.key);
+    }
+  }
+  return set;
+}
+
+function extrasByPage(pages: Map<number, Token[]>, other: Set<string>, kind: Token["kind"]): Map<number, SideGap[]> {
   const found = new Map<number, SideGap[]>();
   for (const page of [...pages.keys()].sort((a, b) => a - b)) {
     for (const token of pages.get(page) ?? []) {
-      if (token.kind !== kind) continue;
-      const left = budget.get(token.key) ?? 0;
-      if (left > 0) {
-        budget.set(token.key, left - 1);
-        continue;
-      }
+      if (token.kind !== kind || other.has(token.key)) continue;
       const list = found.get(page) ?? [];
       const same = list.find((item) => item.raw === token.raw);
       if (same) same.extra += 1;
@@ -468,10 +531,14 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
   const targetTokens = new Map<number, Token[]>();
   for (const [page, value] of sourceText) sourceTokens.set(page, tokensIn(value.text, value.faces));
   for (const [page, value] of targetText) targetTokens.set(page, tokensIn(value.text, value.faces));
-  const sourceDates = park(extrasByPage(sourceTokens, counts(targetTokens, "date"), "date"), target.numPages);
-  const targetDates = extrasByPage(targetTokens, counts(sourceTokens, "date"), "date");
-  const sourceFigures = park(extrasByPage(sourceTokens, counts(targetTokens, "figure"), "figure"), target.numPages);
-  const targetFigures = extrasByPage(targetTokens, counts(sourceTokens, "figure"), "figure");
+  const sourceDates = park(extrasByPage(sourceTokens, keysOf(targetTokens, "date"), "date"), target.numPages);
+  const targetDates = extrasByPage(targetTokens, keysOf(sourceTokens, "date"), "date");
+  const sourceFigureKeys = presentFigures(targetTokens, sourceTokens);
+  const targetFigureKeys = presentFigures(sourceTokens, targetTokens);
+  if (hasBareNumber(targetText, "12")) sourceFigureKeys.add("12");
+  if (hasBareNumber(sourceText, "12")) targetFigureKeys.add("12");
+  const sourceFigures = park(extrasByPage(sourceTokens, sourceFigureKeys, "figure"), target.numPages);
+  const targetFigures = extrasByPage(targetTokens, targetFigureKeys, "figure");
   return pages.map((page) => {
     const sourcePage = page <= source.numPages ? page : null;
     const targetPage = page <= target.numPages ? page : null;
@@ -527,18 +594,15 @@ async function pageLayout(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
   const content = await page.getTextContent();
   let text = "";
   const spans: Span[] = [];
-  let pendingSpace = false;
   for (const item of content.items) {
     if (!("str" in item)) continue;
     const run = item as TextRun;
     const piece = tighten(run.str.normalize("NFKC"));
     if (!piece.trim()) {
-      pendingSpace = true;
       if (run.hasEOL) text += "\n";
       continue;
     }
-    if (pendingSpace && text && !glued(text, piece)) text += " ";
-    pendingSpace = false;
+    if (separate(text, piece)) text += " ";
     if (piece) {
       const start = text.length;
       text += piece;
@@ -554,7 +618,19 @@ async function pageLayout(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
     }
     if (run.hasEOL) text += "\n";
   }
-  return { text: blankFurniture(text), spans, width: viewport.width, height: viewport.height };
+  const folded = foldDigitSpaces(text);
+  const spansOut = spans.flatMap((span) => {
+    let start = -1;
+    let end = -1;
+    folded.map.forEach((origin, index) => {
+      if (origin < span.start || origin >= span.end) return;
+      if (start < 0) start = index;
+      end = index + 1;
+    });
+    if (start < 0) return [];
+    return [{ ...span, start, end }];
+  });
+  return { text: blankFurniture(folded.text), spans: spansOut, width: viewport.width, height: viewport.height };
 }
 
 function locate(text: string, spans: Span[], raw: string): Quad[][] {

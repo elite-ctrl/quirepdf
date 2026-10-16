@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const built = resolve(root, "dist-studio");
-const zipPath = resolve(root, "artifacts/quire-studio.zip");
+const zipPath = resolve(root, "artifacts/faircopy-studio.zip");
 
 function run(command, args, cwd = root) {
   return new Promise((resolveRun, reject) => {
