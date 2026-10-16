@@ -72,15 +72,56 @@ function scaleOf(word: string | undefined): number {
   const name = word.replace(/\s+/g, "").toLowerCase();
   if (name === "million" || name === "mn" || name === "百萬" || name === "百万") return 1e6;
   if (name === "billion" || name === "bn" || name === "十億" || name === "十亿") return 1e9;
+  if (name === "thousand" || name === "千") return 1e3;
   if (name === "萬" || name === "万") return 1e4;
   if (name === "億" || name === "亿") return 1e8;
-  if (name === "cent" || name === "cents" || name === "仙") return 0.01;
+  if (/^(?:hk)?cents?$/.test(name) || name === "仙" || name === "港仙") return 0.01;
   return 1;
 }
 
-function percentOf(word: string | undefined): boolean {
-  if (!word) return false;
-  return /%|％|个百分点|percent/.test(word.toLowerCase());
+/** "%" for per cent, "pp" for percentage points, "" otherwise. Percentage points are a different unit from per cent. */
+function unitOf(word: string | undefined): "%" | "pp" | "" {
+  if (!word) return "";
+  const name = word.toLowerCase();
+  if (/percentage\s*points?|ppts?|[個个]?百分[點点]/.test(name)) return "pp";
+  if (/%|％|per\s*cent/.test(name)) return "%";
+  return "";
+}
+
+const CN_DIGITS: Record<string, number> = { "〇": 0, "零": 0, "○": 0, "一": 1, "二": 2, "兩": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9 };
+
+/** Reads an Arabic or Chinese-numeral integer: 2025, 二零二五, 十二, 三十一, 一百. */
+function intOf(text: string): number {
+  const value = text.trim();
+  if (/^\d+$/.test(value)) return Number(value);
+  if (!/[十百千]/.test(value)) {
+    let digits = "";
+    for (const char of value) {
+      if (!(char in CN_DIGITS)) return NaN;
+      digits += CN_DIGITS[char];
+    }
+    return digits ? Number(digits) : NaN;
+  }
+  let total = 0;
+  let current = 0;
+  for (const char of value) {
+    if (char in CN_DIGITS) current = CN_DIGITS[char];
+    else if (char === "十" || char === "百" || char === "千") {
+      total += (current || 1) * (char === "十" ? 10 : char === "百" ? 100 : 1000);
+      current = 0;
+    } else return NaN;
+  }
+  return total + current;
+}
+
+/** Reads a Chinese-numeral decimal such as 十二點五. */
+function decimalOf(text: string): number {
+  const [whole, fraction] = text.replace(/[點点]/, ".").split(".");
+  const head = intOf(whole || "零");
+  if (fraction === undefined) return head;
+  let digits = "";
+  for (const char of fraction) digits += /\d/.test(char) ? char : String(CN_DIGITS[char] ?? "x");
+  return /^\d+$/.test(digits) ? Number(`${head}.${digits}`) : NaN;
 }
 
 function styleOf(faces: Face[] | undefined, start: number, end: number): Face {
@@ -172,99 +213,204 @@ function styleKey(face: Face): string {
   return `${face.bold ? "b" : ""}${face.italic ? "i" : ""}` || "r";
 }
 
+const YEAR = "(\\d{4}|[〇零○一二三四五六七八九]{4})";
+const CN_MONTH = "(\\d{1,2}|十[一二]?|[一二三四五六七八九])";
+const CN_DAY = "(\\d{1,2}|[一二三]?十[一二三四五六七八九]?|[一二三四五六七八九])";
+const TC_TO = "\\s*(?:至|到|起至|-|–|—|~)\\s*";
+const EN_DAY = "(\\d{1,2})(?:st|nd|rd|th)?";
+const EN_TO = "\\s*(?:to|until|till|through|and|-|–|—)\\s*";
+const CUR = "HK\\$|US\\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥]";
+const NUM = "\\d{1,3}(?:[,，]\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?";
+const TAIL =
+  "十[亿億]|百[万萬]|[亿億]|[万萬]|(?:thousand|million|billion)(?![A-Za-z])|千|(?:percentage\\s+points?|ppts?|mn|bn|(?:HK\\s*)?cents?|per\\s*cent)(?![A-Za-z])|港仙|仙|%|％|[個个]百分[點点]|百分[點点]";
+const CURRENCY_AFTER = /^\s*(?:港元|港幣|美元|人民幣|人民币|元|歐元|英鎊|日圓|日元|HKD|USD|RMB|(?:Hong Kong |US )?dollars?)/i;
+const CURRENCY_BEFORE = /(?:港幣|人民幣|人民币|美元|RMB|HKD|USD)\s*$/i;
+
+type DateRule = { re: RegExp; keys: (match: RegExpMatchArray) => Array<string | null> };
+
+function monthKey(year: number, month: number): string | null {
+  if (year < 1900 || year > 2100 || month < 1 || month > 12) return null;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+/** Date rules in priority order: ranges first, then full dates, then month-year, then Chinese-numeral years. */
+const DATE_RULES: DateRule[] = [
+  {
+    // 2025年11月1日至12月31日
+    re: new RegExp(`${YEAR}\\s*年\\s*${CN_MONTH}\\s*月\\s*${CN_DAY}\\s*日${TC_TO}${CN_MONTH}\\s*月\\s*${CN_DAY}\\s*日`, "g"),
+    keys: (m) => {
+      const year = intOf(m[1]);
+      const from = intOf(m[2]);
+      const to = intOf(m[4]);
+      return [iso(year, from, intOf(m[3])), iso(to < from ? year + 1 : year, to, intOf(m[5]))];
+    },
+  },
+  {
+    // 2025年12月1日至31日
+    re: new RegExp(`${YEAR}\\s*年\\s*${CN_MONTH}\\s*月\\s*${CN_DAY}\\s*日${TC_TO}${CN_DAY}\\s*日`, "g"),
+    keys: (m) => [iso(intOf(m[1]), intOf(m[2]), intOf(m[3])), iso(intOf(m[1]), intOf(m[2]), intOf(m[4]))],
+  },
+  {
+    // 1 November to 31 December 2025
+    re: new RegExp(`\\b${EN_DAY}\\s+(${MONTH})\\.?${EN_TO}${EN_DAY}\\s+(${MONTH})\\.?,?\\s+(\\d{4})\\b`, "gi"),
+    keys: (m) => {
+      const from = monthOf(m[2]);
+      const to = monthOf(m[4]);
+      return [iso(to < from ? +m[5] - 1 : +m[5], from, +m[1]), iso(+m[5], to, +m[3])];
+    },
+  },
+  {
+    // 1 to 31 December 2025
+    re: new RegExp(`\\b${EN_DAY}${EN_TO}${EN_DAY}\\s+(${MONTH})\\.?,?\\s+(\\d{4})\\b`, "gi"),
+    keys: (m) => [iso(+m[4], monthOf(m[3]), +m[1]), iso(+m[4], monthOf(m[3]), +m[2])],
+  },
+  {
+    // December 1 to 31, 2025
+    re: new RegExp(`\\b(${MONTH})\\.?\\s+${EN_DAY}${EN_TO}${EN_DAY},?\\s+(\\d{4})\\b`, "gi"),
+    keys: (m) => [iso(+m[4], monthOf(m[1]), +m[2]), iso(+m[4], monthOf(m[1]), +m[3])],
+  },
+  {
+    re: new RegExp(`${YEAR}\\s*年\\s*${CN_MONTH}\\s*月\\s*${CN_DAY}\\s*日`, "g"),
+    keys: (m) => [iso(intOf(m[1]), intOf(m[2]), intOf(m[3]))],
+  },
+  {
+    re: new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH})\\.?\\s+(\\d{4})\\b`, "gi"),
+    keys: (m) => [iso(+m[3], monthOf(m[2]), +m[1])],
+  },
+  {
+    re: new RegExp(`\\b(${MONTH})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "gi"),
+    keys: (m) => [iso(+m[3], monthOf(m[1]), +m[2])],
+  },
+  {
+    re: /\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b/g,
+    keys: (m) => [iso(+m[1], +m[2], +m[3])],
+  },
+  {
+    re: /\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/g,
+    keys: (m) => [iso(+m[3], +m[2], +m[1])],
+  },
+  {
+    re: /(?<!\b20\d{2}[ \t]+)\b(20\d{2})(?:[ \t]+|[ \t]*\n[ \t]*)(\d{1,2})[ \t]+(\d{1,2})(?![\d%％])/g,
+    keys: (m) => [iso(+m[1], +m[2], +m[3])],
+  },
+  {
+    // 2025年1月至6月
+    re: new RegExp(`${YEAR}\\s*年\\s*${CN_MONTH}\\s*月${TC_TO}${CN_MONTH}\\s*月(?!\\s*[\\d一二三四五六七八九十]+\\s*日)`, "g"),
+    keys: (m) => {
+      const year = intOf(m[1]);
+      const from = intOf(m[2]);
+      const to = intOf(m[3]);
+      return [monthKey(year, from), monthKey(to < from ? year + 1 : year, to)];
+    },
+  },
+  {
+    // January to June 2025
+    re: new RegExp(`\\b(${MONTH})\\.?${EN_TO}(${MONTH})\\.?,?\\s+(\\d{4})\\b`, "g"),
+    keys: (m) => {
+      const from = monthOf(m[1]);
+      const to = monthOf(m[2]);
+      return [monthKey(to < from ? +m[3] - 1 : +m[3], from), monthKey(+m[3], to)];
+    },
+  },
+  {
+    re: new RegExp(`${YEAR}\\s*年\\s*${CN_MONTH}\\s*月`, "g"),
+    keys: (m) => [monthKey(intOf(m[1]), intOf(m[2]))],
+  },
+  {
+    // December 2025; capitalised so "may 2025" in running text is not read as a date.
+    re: new RegExp(`\\b(${MONTH})\\.?,?\\s+(\\d{4})\\b`, "g"),
+    keys: (m) => [monthKey(+m[2], monthOf(m[1]))],
+  },
+  {
+    // 二零二五年 (Arabic years are read with the figures)
+    re: /([〇零○一二三四五六七八九]{4})\s*年/g,
+    keys: (m) => {
+      const year = intOf(m[1]);
+      return [year >= 1900 && year <= 2100 ? String(year) : null];
+    },
+  },
+];
+
 export function tokensIn(source: string, faces?: Face[]): Token[] {
   const text = blankFurniture(source.normalize("NFKC"));
   const tokens: Token[] = [];
   const mask = new Array(text.length).fill(false);
-  const dates: Array<{ re: RegExp; key: (match: RegExpMatchArray) => string | null }> = [
-    {
-      re: /(\d{4})\s*年\s*(\d{1,2})\s*月\s*(\d{1,2})\s*日/g,
-      key: (match) => iso(+match[1], +match[2], +match[3]),
-    },
-    {
-      re: new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH})\\.?\\s+(\\d{4})\\b`, "gi"),
-      key: (match) => iso(+match[3], monthOf(match[2]), +match[1]),
-    },
-    {
-      re: new RegExp(`\\b(${MONTH})\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})\\b`, "gi"),
-      key: (match) => iso(+match[3], monthOf(match[1]), +match[2]),
-    },
-    {
-      re: /\b(\d{4})[/-](\d{1,2})[/-](\d{1,2})\b/g,
-      key: (match) => iso(+match[1], +match[2], +match[3]),
-    },
-    {
-      re: /\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/g,
-      key: (match) => iso(+match[3], +match[2], +match[1]),
-    },
-    {
-      re: /(?<!\b20\d{2}[ \t]+)\b(20\d{2})(?:[ \t]+|[ \t]*\n[ \t]*)(\d{1,2})[ \t]+(\d{1,2})(?![\d%％])/g,
-      key: (match) => iso(+match[1], +match[2], +match[3]),
-    },
-    {
-      re: /(\d{4})\s*年\s*(\d{1,2})\s*月/g,
-      key: (match) => {
-        const month = +match[2];
-        const year = +match[1];
-        if (year < 1900 || year > 2100 || month < 1 || month > 12) return null;
-        return `${year}-${String(month).padStart(2, "0")}`;
-      },
-    },
-  ];
-  for (const pattern of dates) {
-    for (const match of text.matchAll(pattern.re)) {
+  const claim = (start: number, end: number) => {
+    if (mask.slice(start, end).some(Boolean)) return false;
+    mask.fill(true, start, end);
+    return true;
+  };
+  for (const rule of DATE_RULES) {
+    for (const match of text.matchAll(rule.re)) {
       const start = match.index ?? 0;
       const end = start + match[0].length;
       if (mask.slice(start, end).some(Boolean)) continue;
-      const key = pattern.key(match);
-      if (!key) continue;
-      mask.fill(true, start, end);
-      tokens.push({ kind: "date", key, raw: match[0].replace(/\s+/g, " ").trim(), ...styleOf(faces, start, end) });
+      const keys = rule.keys(match);
+      if (!keys.length || keys.some((key) => !key)) continue;
+      claim(start, end);
+      const raw = match[0].replace(/\s+/g, " ").trim();
+      for (const key of keys) tokens.push({ kind: "date", key: key as string, raw, ...styleOf(faces, start, end) });
     }
   }
 
-  const equated = [
-    { re: /十二\s*個?\s*月/g, key: "12" },
-    { re: /\b12\s*[-‐‑–—]\s*months?\b/gi, key: "12" },
+  const equated: Array<{ re: RegExp; key: (match: RegExpMatchArray) => string | null }> = [
+    // 十二個月 is twelve months; 十二月 alone is December and is not a figure.
+    { re: /十二\s*[個个]\s*月/g, key: () => "12" },
+    { re: /\b12\s*[-‐‑–—]\s*months?\b/gi, key: () => "12" },
+    {
+      re: /百分之\s*([\d.〇零○一二三四五六七八九十百點点]+)/g,
+      key: (match) => {
+        const value = /^[\d.]+$/.test(match[1]) ? Number(match[1]) : decimalOf(match[1]);
+        const key = canonicalNumber(value);
+        return key && key !== "0" ? `${key}%` : null;
+      },
+    },
   ];
   for (const pattern of equated) {
     for (const match of text.matchAll(pattern.re)) {
       const start = match.index ?? 0;
       const end = start + match[0].length;
-      if (mask.slice(start, end).some(Boolean)) continue;
-      mask.fill(true, start, end);
-      tokens.push({
-        kind: "figure",
-        key: pattern.key,
-        raw: match[0].replace(/\s+/g, " ").trim(),
-        ...styleOf(faces, start, end),
-      });
+      const key = pattern.key(match);
+      if (!key || !claim(start, end)) continue;
+      tokens.push({ kind: "figure", key, raw: match[0].replace(/\s+/g, " ").trim(), ...styleOf(faces, start, end) });
     }
   }
 
   const bare = [...text].map((char, index) => (mask[index] ? " " : char)).join("");
-  const figure =
-    /(?:^|[^\d.,，]|(?<=\D)\.)((?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(?:\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(?:\s*(?:[\]）)]\s*)?(?:十[亿億]|百[万萬]|[亿億]|[万萬]|(?:million|billion)(?![A-Za-z])|(?:mn|bn|cents?|per\s*cent)(?![A-Za-z])|仙|%|％|个百分点))?\)?)/gi;
+  const figure = new RegExp(
+    `(?:^|[^\\d.,，]|(?<=\\D)\\.)(\\(?\\s*(?:(?<![A-Za-z0-9-])[-−])?(?:${CUR})?\\s*(?:${NUM})(?:\\s*(?:[\\]）)]\\s*)?(?:${TAIL}))?\\)?)`,
+    "gi",
+  );
   for (const match of bare.matchAll(figure)) {
     const raw = match[1].replace(/\s+/g, " ").trim();
-    const body = raw.replace(/[()]/g, "");
-    const parts = body.match(
-      /^(?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)(.*)$/i,
-    );
-    if (!parts) continue;
-    const magnitude = Number(parts[1].replace(/[,，]/g, ""));
-    if (!Number.isFinite(magnitude)) continue;
-    const tail = parts[2] ?? "";
-    const negative = raw.startsWith("(") && raw.endsWith(")");
-    const value = magnitude * scaleOf(tail) * (negative ? -1 : 1);
-    const key = percentOf(tail) ? `${canonicalNumber(value)}%` : canonicalNumber(value);
-    if (!key || key === "0") continue;
-    if (!key.endsWith("%") && /^-?\d+$/.test(key)) {
-      const whole = Math.abs(Number(key));
-      if (whole < 100 || (whole >= 1900 && whole <= 2100)) continue;
-    }
     const start = (match.index ?? 0) + match[0].length - match[1].length;
-    tokens.push({ kind: "figure", key, raw: raw.replace(/[()]/g, ""), ...styleOf(faces, start, start + match[1].length) });
+    const end = start + match[1].length;
+    const body = raw.replace(/[()]/g, "").trim();
+    const parts = body.match(new RegExp(`^([-−])?\\s*(${CUR})?\\s*(${NUM})(.*)$`, "i"));
+    if (!parts) continue;
+    const magnitude = Number(parts[3].replace(/[,，]/g, ""));
+    if (!Number.isFinite(magnitude)) continue;
+    const tail = (parts[4] ?? "").replace(/^[\]）)\s]+/, "");
+    const bracketed = raw.startsWith("(") && raw.endsWith(")");
+    const negative = bracketed || !!parts[1];
+    const scale = scaleOf(tail);
+    const unit = unitOf(tail);
+    const currency = !!parts[2] || CURRENCY_AFTER.test(bare.slice(end)) || CURRENCY_BEFORE.test(bare.slice(Math.max(0, start - 8), start));
+    const value = magnitude * scale * (negative ? -1 : 1);
+    const number = canonicalNumber(value);
+    if (!number || number === "0") continue;
+    const face = styleOf(faces, start, end);
+    const shown = bracketed ? raw : raw.replace(/^\(\s*/, "").replace(/\s*\)$/, "");
+    if (!unit && scale === 1 && !currency && /^\d+$/.test(number)) {
+      const whole = Number(number);
+      // A bare four-digit 1900–2100 with no separator or currency is a year; years are compared as dates.
+      if (whole >= 1900 && whole <= 2100 && !/[,，]/.test(parts[3])) {
+        tokens.push({ kind: "date", key: number, raw: shown, ...face });
+        continue;
+      }
+      if (whole < 100) continue;
+    }
+    tokens.push({ kind: "figure", key: unit ? `${number}${unit}` : number, raw: shown, ...face });
   }
   return tokens;
 }
@@ -450,68 +596,151 @@ function isBareCoefficient(raw: string): boolean {
   return /^(?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*\d+(?:\.\d+)?$/.test(body);
 }
 
-/** A bare coefficient and the same number written in millions are one figure when the unit glyph did not extract. */
-function presentFigures(side: Map<number, Token[]>, other: Map<number, Token[]>): Set<string> {
-  const present = keysOf(side, "figure");
-  const sideTokens = [...side.values()].flat().filter((token) => token.kind === "figure");
-  const otherTokens = [...other.values()].flat().filter((token) => token.kind === "figure");
-  for (const token of sideTokens) {
-    const value = Number(token.key);
-    if (!Number.isFinite(value) || value === 0) continue;
-    if (isBareCoefficient(token.raw)) {
-      const scaled = canonicalNumber(value * 1e6);
-      if (scaled && otherTokens.some((item) => item.key === scaled && isMillionRaw(item.raw))) present.add(scaled);
-    }
-    if (isMillionRaw(token.raw)) {
-      const coeff = canonicalNumber(value / 1e6);
-      if (coeff && otherTokens.some((item) => item.key === coeff && isBareCoefficient(item.raw))) present.add(coeff);
-    }
-  }
-  return present;
+/** How many pages either side of the counterpart page a matching figure or date may sit. */
+const PAGE_WINDOW = 1;
+
+/** Maps a page in one document to its proportional counterpart in the other. */
+function counterpart(page: number, from: number, to: number): number {
+  if (to <= 1 || from <= 1) return Math.max(1, Math.min(page, to));
+  return Math.max(1, Math.min(to, Math.round(((page - 1) * (to - 1)) / (from - 1)) + 1));
 }
 
-function hasBareNumber(pages: Map<number, { text: string }>, number: string): boolean {
-  const pattern = new RegExp(`(?:^|[^\\d.,，])${number}(?![\\d.,，])`);
-  for (const value of pages.values()) {
-    if (pattern.test(value.text)) return true;
-  }
-  return false;
-}
+type Slot = { page: number; token: Token; used: boolean };
 
-function keysOf(pages: Map<number, Token[]>, kind: Token["kind"]): Set<string> {
-  const set = new Set<string>();
-  for (const list of pages.values()) {
-    for (const token of list) {
-      if (token.kind === kind) set.add(token.key);
-    }
-  }
-  return set;
-}
-
-function extrasByPage(pages: Map<number, Token[]>, other: Set<string>, kind: Token["kind"]): Map<number, SideGap[]> {
-  const found = new Map<number, SideGap[]>();
+function slotsOf(pages: Map<number, Token[]>, kind: Token["kind"]): Slot[] {
+  const slots: Slot[] = [];
   for (const page of [...pages.keys()].sort((a, b) => a - b)) {
-    for (const token of pages.get(page) ?? []) {
-      if (token.kind !== kind || other.has(token.key)) continue;
+    for (const token of pages.get(page) ?? []) if (token.kind === kind) slots.push({ page, token, used: false });
+  }
+  return slots;
+}
+
+/** Other keys a figure may legitimately appear under: a bare coefficient and the same number in millions. */
+function aliasesOf(token: Token): Array<{ key: string; accepts: (other: Token) => boolean }> {
+  if (token.kind !== "figure") return [];
+  const value = Number(token.key);
+  if (!Number.isFinite(value) || value === 0) return [];
+  const list: Array<{ key: string; accepts: (other: Token) => boolean }> = [];
+  if (isBareCoefficient(token.raw)) {
+    const key = canonicalNumber(value * 1e6);
+    if (key) list.push({ key, accepts: (other) => isMillionRaw(other.raw) });
+  }
+  if (isMillionRaw(token.raw)) {
+    const key = canonicalNumber(value / 1e6);
+    if (key) list.push({ key, accepts: (other) => isBareCoefficient(other.raw) });
+  }
+  return list;
+}
+
+function hasBareNumber(text: string, number: string): boolean {
+  return new RegExp(`(?:^|[^\\d.,，])${number}(?![\\d.,，])`).test(text);
+}
+
+/**
+ * Pairs each source occurrence with one target occurrence of the same key on the counterpart page,
+ * or failing that within PAGE_WINDOW pages. Every occurrence is used once, so a figure repeated on one
+ * side only is reported, and a figure that only appears far away in the other document is not a match.
+ */
+function pairOccurrences(
+  sourceTokens: Map<number, Token[]>,
+  targetTokens: Map<number, Token[]>,
+  sourceText: Map<number, { text: string }>,
+  targetText: Map<number, { text: string }>,
+  sourceCount: number,
+  targetCount: number,
+  kind: Token["kind"],
+): { source: Map<number, SideGap[]>; target: Map<number, SideGap[]> } {
+  const source = slotsOf(sourceTokens, kind);
+  const target = slotsOf(targetTokens, kind);
+  const byKey = new Map<string, Slot[]>();
+  for (const slot of target) {
+    const list = byKey.get(slot.token.key) ?? [];
+    list.push(slot);
+    byKey.set(slot.token.key, list);
+  }
+  for (let distance = 0; distance <= PAGE_WINDOW; distance += 1) {
+    for (const exact of [true, false]) {
+      for (const slot of source) {
+        if (slot.used) continue;
+        const home = counterpart(slot.page, sourceCount, targetCount);
+        const wanted = exact ? [{ key: slot.token.key, accepts: () => true }] : aliasesOf(slot.token);
+        for (const want of wanted) {
+          const hit = (byKey.get(want.key) ?? []).find(
+            (other) => !other.used && Math.abs(other.page - home) === distance && want.accepts(other.token),
+          );
+          if (!hit) continue;
+          slot.used = true;
+          hit.used = true;
+          break;
+        }
+      }
+    }
+  }
+  // "12 months" may be written with a bare 12 (12個月) that is not itself a figure.
+  const near = (texts: Map<number, { text: string }>, home: number) =>
+    [...texts].some(([page, value]) => Math.abs(page - home) <= PAGE_WINDOW && hasBareNumber(value.text, "12"));
+  for (const slot of source) {
+    if (!slot.used && kind === "figure" && slot.token.key === "12") slot.used = near(targetText, counterpart(slot.page, sourceCount, targetCount));
+  }
+  for (const slot of target) {
+    if (!slot.used && kind === "figure" && slot.token.key === "12") slot.used = near(sourceText, counterpart(slot.page, targetCount, sourceCount));
+  }
+  const collect = (slots: Slot[], place: (page: number) => number) => {
+    const found = new Map<number, SideGap[]>();
+    for (const slot of slots) {
+      if (slot.used) continue;
+      const page = place(slot.page);
       const list = found.get(page) ?? [];
-      const same = list.find((item) => item.raw === token.raw);
+      const same = list.find((item) => item.raw === slot.token.raw);
       if (same) same.extra += 1;
-      else list.push({ raw: token.raw, extra: 1 });
+      else list.push({ raw: slot.token.raw, extra: 1 });
       found.set(page, list);
     }
-  }
-  return found;
+    return found;
+  };
+  return {
+    // Source gaps are shown on the counterpart target page.
+    source: collect(source, (page) => counterpart(page, sourceCount, targetCount)),
+    target: collect(target, (page) => page),
+  };
 }
 
-function park(gaps: Map<number, SideGap[]>, limit: number): Map<number, SideGap[]> {
-  const parked = new Map<number, SideGap[]>();
-  for (const [page, list] of gaps) {
-    const dest = page <= limit ? page : 1;
-    const current = parked.get(dest) ?? [];
-    current.push(...list);
-    parked.set(dest, current);
+/** Picks the source page whose figures and dates best match a target page, near its counterpart. */
+function pairedSourcePage(
+  targetPage: number,
+  sourceTokens: Map<number, Token[]>,
+  targetTokens: Map<number, Token[]>,
+  sourceCount: number,
+  targetCount: number,
+): number | null {
+  if (!sourceCount) return null;
+  const home = counterpart(targetPage, targetCount, sourceCount);
+  const wanted = new Map<string, number>();
+  for (const token of targetTokens.get(targetPage) ?? []) {
+    const key = `${token.kind}:${token.key}`;
+    wanted.set(key, (wanted.get(key) ?? 0) + 1);
   }
-  return parked;
+  let best = home;
+  let bestScore = -1;
+  for (let page = home - PAGE_WINDOW; page <= home + PAGE_WINDOW; page += 1) {
+    if (page < 1 || page > sourceCount) continue;
+    const left = new Map(wanted);
+    let score = 0;
+    for (const token of sourceTokens.get(page) ?? []) {
+      const key = `${token.kind}:${token.key}`;
+      const count = left.get(key) ?? 0;
+      if (count > 0) {
+        score += 1;
+        left.set(key, count - 1);
+      }
+    }
+    const better = score > bestScore || (score === bestScore && Math.abs(page - home) < Math.abs(best - home));
+    if (better) {
+      best = page;
+      bestScore = score;
+    }
+  }
+  return best;
 }
 
 export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<PairCheck[]> {
@@ -531,34 +760,33 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
   const targetTokens = new Map<number, Token[]>();
   for (const [page, value] of sourceText) sourceTokens.set(page, tokensIn(value.text, value.faces));
   for (const [page, value] of targetText) targetTokens.set(page, tokensIn(value.text, value.faces));
-  const sourceDates = park(extrasByPage(sourceTokens, keysOf(targetTokens, "date"), "date"), target.numPages);
-  const targetDates = extrasByPage(targetTokens, keysOf(sourceTokens, "date"), "date");
-  const sourceFigureKeys = presentFigures(targetTokens, sourceTokens);
-  const targetFigureKeys = presentFigures(sourceTokens, targetTokens);
-  if (hasBareNumber(targetText, "12")) sourceFigureKeys.add("12");
-  if (hasBareNumber(sourceText, "12")) targetFigureKeys.add("12");
-  const sourceFigures = park(extrasByPage(sourceTokens, sourceFigureKeys, "figure"), target.numPages);
-  const targetFigures = extrasByPage(targetTokens, targetFigureKeys, "figure");
+  const sides = [sourceTokens, targetTokens, sourceText, targetText, source.numPages, target.numPages] as const;
+  const dates = pairOccurrences(...sides, "date");
+  const figures = pairOccurrences(...sides, "figure");
   return pages.map((page) => {
-    const sourcePage = page <= source.numPages ? page : null;
     const targetPage = page <= target.numPages ? page : null;
+    const sourcePage = targetPage
+      ? pairedSourcePage(page, sourceTokens, targetTokens, source.numPages, target.numPages)
+      : page <= source.numPages
+        ? page
+        : null;
     const formats =
       sourcePage && targetPage
         ? compareSides(
-            sourceText.get(page)?.text ?? "",
-            targetText.get(page)?.text ?? "",
-            sourceText.get(page)?.faces,
-            targetText.get(page)?.faces,
+            sourceText.get(sourcePage)?.text ?? "",
+            targetText.get(targetPage)?.text ?? "",
+            sourceText.get(sourcePage)?.faces,
+            targetText.get(targetPage)?.faces,
           ).formats
         : [];
     return {
       page,
       sourcePage,
       targetPage,
-      datesSource: targetPage ? (sourceDates.get(page) ?? []) : [],
-      datesTarget: targetPage ? (targetDates.get(page) ?? []) : [],
-      figuresSource: targetPage ? (sourceFigures.get(page) ?? []) : [],
-      figuresTarget: targetPage ? (targetFigures.get(page) ?? []) : [],
+      datesSource: targetPage ? (dates.source.get(page) ?? []) : [],
+      datesTarget: targetPage ? (dates.target.get(page) ?? []) : [],
+      figuresSource: targetPage ? (figures.source.get(page) ?? []) : [],
+      figuresTarget: targetPage ? (figures.target.get(page) ?? []) : [],
       formats,
     };
   });
