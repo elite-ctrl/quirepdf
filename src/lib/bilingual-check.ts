@@ -224,7 +224,7 @@ const EN_TO = "\\s*(?:to|until|till|through|and|-|–|—)\\s*";
 const CUR = "HK\\$|US\\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥]";
 const NUM = "\\d{1,3}(?:[,，]\\d{3})+(?:\\.\\d+)?|\\d+(?:\\.\\d+)?";
 const TAIL =
-  "十[亿億]|百[万萬]|[亿億]|[万萬]|(?:thousand|million|billion)(?![A-Za-z])|千|(?:percentage\\s+points?|ppts?|mn|bn|(?:HK\\s*)?cents?|per\\s*cent)(?![A-Za-z])|港仙|仙|%|％|[個个]百分[點点]|百分[點点]";
+  "十[亿億]|百[万萬]|[亿億]|[万萬]|(?:thousand|million|billion)(?![A-Za-z])|千(?![瓦克米卡焦升])|(?:percentage\\s+points?|ppts?|mn|bn|(?:HK\\s*)?cents?|per\\s*cent)(?![A-Za-z])|港仙|仙|%|％|[個个]百分[點点]|百分[點点]";
 const CURRENCY_AFTER = /^\s*(?:港元|港幣|美元|人民幣|人民币|元|歐元|英鎊|日圓|日元|HKD|USD|RMB|(?:Hong Kong |US )?dollars?)/i;
 const CURRENCY_BEFORE = /(?:港幣|人民幣|人民币|美元|RMB|HKD|USD)\s*$/i;
 
@@ -397,8 +397,15 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
     const magnitude = Number(parts[3].replace(/[,，]/g, ""));
     if (!Number.isFinite(magnitude)) continue;
     const tail = (parts[4] ?? "").replace(/^[\]）)\s]+/, "");
-    const bracketed = raw.startsWith("(") && raw.endsWith(")");
-    const negative = bracketed || !!parts[1];
+    let bracketed = raw.startsWith("(") && raw.endsWith(")");
+    // "ten (10) years" and "(2004)" repeat a count or a year; only a bracketed amount reads as negative.
+    if (bracketed && !parts[1] && !parts[2] && !tail.trim() && /^\d+$/.test(parts[3])) {
+      const whole = Number(parts[3]);
+      if (whole < 100 || (whole >= 1900 && whole <= 2100)) bracketed = false;
+    }
+    // A dash that opens a line and stands apart from the number is a list bullet ("－ 2026年"), not a minus.
+    const bullet = !!parts[1] && /^[-−]\s/.test(raw) && /(?:^|\n)[ \t]*$/.test(bare.slice(0, start + match[1].length - match[1].trimStart().length));
+    const negative = bracketed || (!!parts[1] && !bullet);
     const scale = scaleOf(tail);
     const unit = unitOf(tail);
     const currency = !!parts[2] || CURRENCY_AFTER.test(bare.slice(end)) || CURRENCY_BEFORE.test(bare.slice(Math.max(0, start - 8), start));
@@ -406,7 +413,7 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
     const number = canonicalNumber(value);
     if (!number || number === "0") continue;
     const face = styleOf(faces, start, end);
-    const shown = bracketed ? raw : raw.replace(/^\(\s*/, "").replace(/\s*\)$/, "");
+    const shown = bracketed ? raw : raw.replace(/^\(\s*/, "").replace(/\s*\)$/, "").replace(bullet ? /^[-−]\s*/ : /^$/, "");
     if (!unit && scale === 1 && !currency && /^\d+$/.test(number)) {
       const whole = Number(number);
       // A bare four-digit 1900–2100 with no separator or currency is a year; years are compared as dates.

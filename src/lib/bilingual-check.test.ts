@@ -230,3 +230,17 @@ test("a date that is on no nearby page is still reported", async () => {
   const pairs = await checkBilingual(doc(en), doc(tc));
   assert.equal(pairs.flatMap((p) => [...p.datesSource, ...p.datesTarget]).length, 2);
 });
+
+test("figures: a bracketed count or year is not read as a negative amount", () => {
+  assert.deepEqual(flags("not longer than ten (10) years and twelve (12) months", "不得超過十（10）年及十二（12）個月"), []);
+  assert.deepEqual(flags("the Greenhouse Gas Protocol (2004).", "溫室氣體盤查議定書（2004年）計算。"), []);
+  assert.deepEqual(flags("a loss of HK$(1,500)", "虧損(1,500)港元"), []);
+});
+
+test("figures: a line-opening dash bullet is not a minus sign", () => {
+  assert.deepEqual(flags("to be recognised:\n– 2026 N/A 82,254\n– 2027 84,589", "確認為收入：\n－ 2026年 不適用 82,254\n－ 2027年 84,589"), []);
+});
+
+test("figures: 千 in a unit such as 千瓦時 is not a thousand", () => {
+  assert.deepEqual(flags("Petrol 1 kWh 6,978", "汽油1 千瓦時 6,978"), []);
+});
