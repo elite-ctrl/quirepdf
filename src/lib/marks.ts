@@ -52,7 +52,7 @@ export type Mark = {
 export const INK_RGB: Record<InkId, [number, number, number]> = {
   brass: [141 / 255, 90 / 255, 43 / 255],
   steel: [30 / 255, 77 / 255, 107 / 255],
-  crimson: [140 / 255, 47 / 255, 47 / 255],
+  crimson: [171 / 255, 39 / 255, 60 / 255],
 };
 
 const HEADER = /^\[(?:(First read|Second read|P[12]) · )?(Query|Style|Term|Number|Cross-ref|Note)\]\n?/;

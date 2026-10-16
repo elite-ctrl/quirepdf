@@ -15,14 +15,18 @@
   --color-muted: #3a3a3a;
   --color-line: #000000;
   --color-line-dark: #000000;
-  --color-brass: #8d5a2b;
-  --color-steel: #1e4d6b;
-  --color-crimson: #8c2f2f;
   --color-stamp: #ffd23f;
   --color-pink: #ff6b6b;
   --color-sky: #74b9ff;
   --color-mint: #88d498;
   --radius-md: 0px;
+}
+
+/* Ink colours are looked up by name (var(--color-<ink>)), so always emit them. */
+@theme static {
+  --color-brass: #8d5a2b;
+  --color-steel: #1e4d6b;
+  --color-crimson: #ab273c; /* rgb(171, 39, 60) */
 }
 
 @layer base {
