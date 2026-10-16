@@ -95,6 +95,7 @@ function doc(pages: Array<string | Run[]>) {
           items: runs.map((run) => ({ str: run.str, hasEOL: true, transform: [1, 0, 0, 1, 0, 0], width: 10, height: 10, fontName: run.bold ? "B" : "R" })),
         }),
         commonObjs: { get: (name: string) => ({ bold: name === "B" }) },
+        getViewport: () => ({ width: 595, height: 842 }),
       };
     },
   } as never;
@@ -151,4 +152,55 @@ test("document: style is compared with the best-matching source page", async () 
   assert.equal(pairs[0].sourcePage, 2);
   assert.equal(pairs[1].sourcePage, 3);
   assert.deepEqual(pairs.flatMap((pair) => pair.formats), []);
+});
+
+async function bracketNotes(en: Array<string | Run[]>, tc: Array<string | Run[]>): Promise<string[]> {
+  const pairs = await checkBilingual(doc(en), doc(tc));
+  return pairs.flatMap((pair) => pair.brackets.map((gap) => `p${pair.page} ${gap.raw || "-"}#${gap.at} ${gap.note}`));
+}
+
+test("brackets: balanced pairs on both sides are clean", async () => {
+  assert.deepEqual(await bracketNotes(['the Company ("Company") (a) [1]'], ["本公司（「本公司」）（a）［1］"]), []);
+});
+
+test("brackets: an unclosed target bracket is marked", async () => {
+  assert.deepEqual(await bracketNotes(["(a) and (b)"], ["（a）及（b"]), ["p1 (#1 Bracket: （ is not closed."]);
+});
+
+test("brackets: a stray closing bracket is marked", async () => {
+  assert.deepEqual(await bracketNotes(["(a) b"], ["（a）b）"]), ["p1 )#1 Bracket: ） has no opening bracket."]);
+});
+
+test("brackets: the wrong kind of closing bracket is marked", async () => {
+  assert.deepEqual(await bracketNotes(["(a)"], ["（a］"]), [
+    "p1 ]#0 Bracket: ］ does not match the open （.",
+    "p1 (#0 Bracket: （ is not closed.",
+  ]);
+});
+
+test("brackets: mixing full-width and half-width is marked", async () => {
+  assert.deepEqual(await bracketNotes(["(a)"], ["（a)"]), ["p1 )#0 Bracket: （ is closed with half-width )."]);
+});
+
+test("brackets: a bracket may close on the next page", async () => {
+  assert.deepEqual(await bracketNotes(["(continued", "here)"], ["（續", "此處）"]), []);
+});
+
+test("brackets: list markers such as 1) and a) are not stray", async () => {
+  assert.deepEqual(await bracketNotes(["1) first\na) second"], ["1) 第一\na) 第二"]), []);
+});
+
+test("brackets: a different number of brackets from the source is noted", async () => {
+  assert.deepEqual(await bracketNotes(["(a) (b) (c)"], ["（a）（b）"]), ["p1 -#0 Brackets: source page 1 has 3; this page has 2."]);
+});
+
+test("brackets: bracket marks land on the target bracket", async () => {
+  const { marksOnTarget } = await import("./bilingual-check.ts");
+  const target = doc(["（a）及（b"]);
+  const pairs = await checkBilingual(doc(["(a) and (b)"]), target);
+  const marks = await marksOnTarget(target, pairs);
+  assert.equal(marks.length, 1);
+  assert.equal(marks[0].kind, "highlight");
+  assert.equal(marks[0].quote, "(");
+  assert.equal(marks[0].note, "Bracket: （ is not closed.");
 });

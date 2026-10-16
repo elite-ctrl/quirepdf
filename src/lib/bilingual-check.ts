@@ -14,6 +14,8 @@ export type PairCheck = {
   figuresSource: SideGap[];
   figuresTarget: SideGap[];
   formats: FormatGap[];
+  /** Bracket problems on the target page, and a note when the paired pages hold different numbers of brackets. */
+  brackets: BracketGap[];
 };
 
 type Face = { bold: boolean; italic: boolean };
@@ -544,7 +546,14 @@ function wordStyleGaps(sourceText: string, sourceFaces: Face[] | undefined, targ
 
 type FontRecord = { bold?: boolean; italic?: boolean; black?: boolean };
 
-async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: string; faces: Face[] }> {
+const OPEN_BRACKETS = "([【〔";
+const CLOSE_BRACKETS = ")]】〕";
+const FULL_WIDTH_BRACKETS = /[（）［］【】〔〕]/;
+const ANY_BRACKET = /[()[\]（）［］【】〔〕]/;
+
+type PageText = { text: string; faces: Face[]; full: Set<number> };
+
+async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<PageText> {
   const page = await pdf.getPage(pageNumber);
   const content = await page.getTextContent();
   const objs = page.commonObjs;
@@ -565,6 +574,7 @@ async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
   };
   let text = "";
   const faces: Face[] = [];
+  const fullAt = new Set<number>();
   const push = (piece: string, face: Face) => {
     text += piece;
     for (let index = 0; index < piece.length; index += 1) faces.push(face);
@@ -579,11 +589,24 @@ async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
       continue;
     }
     if (separate(text, piece)) push(" ", { bold: false, italic: false });
+    // NFKC folds （ to (, so remember which brackets were full-width in the PDF.
+    const widths = [...run.str].filter((char) => ANY_BRACKET.test(char)).map((char) => FULL_WIDTH_BRACKETS.test(char));
+    let nth = 0;
+    [...piece].forEach((char, offset) => {
+      if (!ANY_BRACKET.test(char)) return;
+      if (widths[nth]) fullAt.add(text.length + offset);
+      nth += 1;
+    });
     push(piece, face);
     if (run.hasEOL) push("\n", { bold: false, italic: false });
   }
   const folded = foldDigitSpaces(text);
-  return { text: blankFurniture(folded.text), faces: folded.map.map((index) => faces[index] ?? { bold: false, italic: false }) };
+  const finalText = blankFurniture(folded.text);
+  const full = new Set<number>();
+  folded.map.forEach((origin, index) => {
+    if (fullAt.has(origin) && ANY_BRACKET.test(finalText[index] ?? "")) full.add(index);
+  });
+  return { text: finalText, faces: folded.map.map((index) => faces[index] ?? { bold: false, italic: false }), full };
 }
 
 function isMillionRaw(raw: string): boolean {
@@ -594,6 +617,86 @@ function isBareCoefficient(raw: string): boolean {
   const body = raw.replace(/[()]/g, "").trim();
   if (/[,，%％]|million|billion|百萬|百万|十[亿億]|[亿億万萬]/i.test(body)) return false;
   return /^(?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*\d+(?:\.\d+)?$/.test(body);
+}
+
+/** A bracket problem on one page. raw is the bracket as it appears in the page text; "" marks a page-level note. */
+export type BracketGap = { raw: string; note: string; at: number };
+
+const SHOWN_OPEN = ["(", "[", "【", "〔"];
+const SHOWN_CLOSE = [")", "]", "】", "〕"];
+const FULL_OPEN = ["（", "［", "【", "〔"];
+const FULL_CLOSE = ["）", "］", "】", "〕"];
+
+function shown(char: string, full: boolean): string {
+  const open = OPEN_BRACKETS.indexOf(char);
+  if (open >= 0) return full ? FULL_OPEN[open] : SHOWN_OPEN[open];
+  const close = CLOSE_BRACKETS.indexOf(char);
+  return close >= 0 ? (full ? FULL_CLOSE[close] : SHOWN_CLOSE[close]) : char;
+}
+
+/** A closing bracket that numbers a list item: "1)", "a)", "iv)". */
+function listMarker(text: string, at: number): boolean {
+  const lineStart = text.lastIndexOf("\n", at - 1) + 1;
+  return /^\s*(?:\d{1,3}|[A-Za-z]|[ivxlc]{1,5}|[一二三四五六七八九十]{1,3})$/i.test(text.slice(lineStart, at));
+}
+
+/**
+ * Scans the target document for brackets that are not closed, are closed by the wrong kind,
+ * or mix full-width and half-width. Brackets may open on one page and close on the next.
+ */
+export function bracketIssues(pages: Map<number, { text: string; full: Set<number> }>): Map<number, BracketGap[]> {
+  const found = new Map<number, BracketGap[]>();
+  const stack: Array<{ page: number; char: string; full: boolean; at: number }> = [];
+  const add = (page: number, char: string, at: number, note: string) => {
+    const list = found.get(page) ?? [];
+    list.push({ raw: char, note, at });
+    found.set(page, list);
+  };
+  for (const page of [...pages.keys()].sort((a, b) => a - b)) {
+    const { text, full } = pages.get(page) as { text: string; full: Set<number> };
+    const seen = new Map<string, number>();
+    for (let index = 0; index < text.length; index += 1) {
+      const char = text[index];
+      const isOpen = OPEN_BRACKETS.includes(char);
+      const isClose = CLOSE_BRACKETS.includes(char);
+      if (!isOpen && !isClose) continue;
+      const at = seen.get(char) ?? 0;
+      seen.set(char, at + 1);
+      const wide = full.has(index);
+      if (isOpen) {
+        stack.push({ page, char, full: wide, at });
+        continue;
+      }
+      const kind = CLOSE_BRACKETS.indexOf(char);
+      const top = stack.at(-1);
+      if (!top || OPEN_BRACKETS.indexOf(top.char) !== kind) {
+        if (listMarker(text, index)) continue;
+        if (!top) {
+          add(page, char, at, `Bracket: ${shown(char, wide)} has no opening bracket.`);
+          continue;
+        }
+        // Close the nearest matching opener if there is one; otherwise this closer is stray.
+        const match = stack.map((item) => OPEN_BRACKETS.indexOf(item.char)).lastIndexOf(kind);
+        if (match < 0) {
+          add(page, char, at, `Bracket: ${shown(char, wide)} does not match the open ${shown(top.char, top.full)}.`);
+          continue;
+        }
+        for (const item of stack.splice(match + 1)) add(item.page, item.char, item.at, `Bracket: ${shown(item.char, item.full)} is not closed.`);
+      }
+      const open = stack.pop() as { page: number; char: string; full: boolean; at: number };
+      if (open.full !== wide && kind < 2) {
+        add(page, char, at, `Bracket: ${shown(open.char, open.full)} is closed with ${open.full ? "half-width" : "full-width"} ${shown(char, wide)}.`);
+      }
+    }
+  }
+  for (const item of stack) add(item.page, item.char, item.at, `Bracket: ${shown(item.char, item.full)} is not closed.`);
+  return found;
+}
+
+function bracketCount(text: string): number {
+  let count = 0;
+  for (const char of text) if (OPEN_BRACKETS.includes(char)) count += 1;
+  return count;
 }
 
 /** How many pages either side of the counterpart page a matching figure or date may sit. */
@@ -746,8 +849,8 @@ function pairedSourcePage(
 export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<PairCheck[]> {
   const count = Math.max(source.numPages, target.numPages);
   const pages = Array.from({ length: count }, (_, index) => index + 1);
-  const sourceText = new Map<number, { text: string; faces: Face[] }>();
-  const targetText = new Map<number, { text: string; faces: Face[] }>();
+  const sourceText = new Map<number, PageText>();
+  const targetText = new Map<number, PageText>();
   await Promise.all([
     ...pages.filter((page) => page <= source.numPages).map(async (page) => {
       sourceText.set(page, await readStyled(source, page));
@@ -763,6 +866,7 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
   const sides = [sourceTokens, targetTokens, sourceText, targetText, source.numPages, target.numPages] as const;
   const dates = pairOccurrences(...sides, "date");
   const figures = pairOccurrences(...sides, "figure");
+  const brackets = bracketIssues(targetText);
   return pages.map((page) => {
     const targetPage = page <= target.numPages ? page : null;
     const sourcePage = targetPage
@@ -779,6 +883,14 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
             targetText.get(targetPage)?.faces,
           ).formats
         : [];
+    const bracketGaps = targetPage ? [...(brackets.get(targetPage) ?? [])] : [];
+    if (sourcePage && targetPage) {
+      const inSource = bracketCount(sourceText.get(sourcePage)?.text ?? "");
+      const inTarget = bracketCount(targetText.get(targetPage)?.text ?? "");
+      if (inSource !== inTarget) {
+        bracketGaps.push({ raw: "", note: `Brackets: source page ${sourcePage} has ${inSource}; this page has ${inTarget}.`, at: 0 });
+      }
+    }
     return {
       page,
       sourcePage,
@@ -788,6 +900,7 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
       figuresSource: targetPage ? (figures.source.get(page) ?? []) : [],
       figuresTarget: targetPage ? (figures.target.get(page) ?? []) : [],
       formats,
+      brackets: bracketGaps,
     };
   });
 }
@@ -988,6 +1101,15 @@ export async function marksOnTarget(target: PdfDoc, pairs: PairCheck[]): Promise
     };
     add("Date", expand(pair.datesSource), expand(pair.datesTarget));
     add("Figure", expand(pair.figuresSource), expand(pair.figuresTarget));
+    for (const item of pair.brackets ?? []) {
+      if (marks.length >= 200) break;
+      const found = item.raw ? (cache.get(item.raw) ?? locate(layout.text, layout.spans, item.raw)) : [];
+      if (item.raw && !cache.has(item.raw)) cache.set(item.raw, found);
+      const quads = found[item.at] ?? null;
+      if (quads) marks.push(markText(pair.targetPage, quads, item.raw, item.note, "steel", "style", "highlight"));
+      else marks.push(placeCallout(pair.targetPage, item.note, null, layout.width, layout.height, stack, "steel", "style"));
+      stack += 1;
+    }
     for (const item of pair.formats) {
       if (marks.length >= 200) break;
       const found = cache.get(item.raw) ?? locate(layout.text, layout.spans, item.raw);

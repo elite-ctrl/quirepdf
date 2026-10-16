@@ -1299,7 +1299,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       }
       setStatus(marked.length ? `Marked ${marked.length} on the target.` : "Source and target match.");
     } catch {
-      setError("Figures and dates could not be checked.");
+      setError("Figures, dates and brackets could not be checked.");
     } finally {
       setFigureBusy(false);
     }
@@ -1314,7 +1314,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     try {
       const output = await embedMarks(current.bytes, marked, []);
       downloadBlob(new Blob([output.slice(0)], { type: "application/pdf" }), `${safeStem(current.name)}-figures.pdf`);
-      setStatus("Downloaded the target PDF with the figure and date marks.");
+      setStatus("Downloaded the target PDF with the figure, date and bracket marks.");
     } catch {
       setError("The target PDF could not be written.");
     } finally {
@@ -1717,7 +1717,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                         : "Studio copy. No passcode while the desk is being changed. The customer version still asks for one."
                       : heldName
                         ? `${heldName} is waiting. Enter the passcode to open it.`
-                        : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Bilingual opens the other language, then figures and dates can be checked. Grammar checks British English, including spelling.`}
+                        : `The sample needs no passcode. ${paid ? "Passcode accepted. Choose the PDF." : "Enter the passcode, then the file chooser opens."} Compare opens a second PDF beside this one. Changes marks what this later copy added or deleted. Bilingual opens the other language, then figures, dates and brackets can be checked. Grammar checks British English, including spelling.`}
                   </p>
                   {error && (
                     <p className="mt-4 text-sm text-paper" role="alert">
@@ -1754,20 +1754,20 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
             {pairKind === "bilingual" && (
               <div className="flex shrink-0 flex-wrap items-center gap-3 border-b border-line-dark px-3 py-2">
                 <p className="min-w-0 flex-1 text-sm text-pretty text-muted">
-                  Source, then target. Figures, dates, bold, and italic are marked on the target.
+                  Source, then target. Figures, dates, brackets, bold, and italic are marked on the target.
                 </p>
                 <button
                   type="button"
-                  title="Check figures, dates, bold, and italic. A date matches by the day. An amount matches without the currency sign."
+                  title="Check figures, dates, brackets, bold, and italic. A date matches by the day. An amount matches without the currency sign. Brackets must open and close in pairs, of one width, and match the source in number."
                   disabled={figureBusy}
                   onClick={() => void checkFigures()}
                   className="h-11 shrink-0 rounded-md bg-brass px-4 text-sm text-paper disabled:opacity-40"
                 >
-                  {figureBusy ? "Checking…" : "Figures and dates"}
+                  {figureBusy ? "Checking…" : "Figures, dates and brackets"}
                 </button>
                 <button
                   type="button"
-                  title="Download the target PDF with the figure and date marks."
+                  title="Download the target PDF with the figure, date and bracket marks."
                   disabled={!targetMarks.length || exporting !== null}
                   onClick={() => void downloadTarget()}
                   className="h-11 shrink-0 rounded-md bg-raised px-4 text-sm text-paper disabled:opacity-40"

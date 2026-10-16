@@ -180,7 +180,7 @@ export function Rail({
         {remarkList.length > 0 && (
           <li className="mb-3">
             <p className="px-1 pb-2 text-sm text-muted">
-              Figures and dates
+              Figures, dates and brackets
               <span className="ml-2 tabular-nums">{remarkList.length}</span>
             </p>
             <ul>
