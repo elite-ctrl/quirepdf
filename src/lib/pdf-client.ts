@@ -55,6 +55,7 @@ const KIND_BY_SUBTYPE: Record<string, Kind> = {
   StrikeOut: "strikeout",
   Line: "arrow",
   FreeText: "callout",
+  Square: "square",
 };
 
 function colorChannels(color: unknown): [number, number, number] | null {
@@ -86,7 +87,7 @@ function rectQuad(rect: unknown): Quad | null {
   return { x: Math.min(x1, x2), y: Math.min(y1, y2), w, h };
 }
 
-export async function readExisting(pdf: PdfDoc): Promise<{ marks: Mark[]; ids: string[] }> {
+export async function readExisting(pdf: PdfDoc, bytes?: Uint8Array): Promise<{ marks: Mark[]; ids: string[] }> {
   const marks: Mark[] = [];
   const ids: string[] = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
@@ -123,6 +124,16 @@ export async function readExisting(pdf: PdfDoc): Promise<{ marks: Mark[]; ids: s
         sourceId: sourceId || undefined,
         createdAt: Date.now(),
       });
+    }
+  }
+  const squares = marks.filter((mark) => mark.kind === "square" && mark.sourceId).map((mark) => mark.sourceId as string);
+  if (bytes && squares.length) {
+    try {
+      const { tintedSquares } = await import("@/lib/embed-marks");
+      const tinted = await tintedSquares(bytes, squares);
+      for (const mark of marks) if (mark.sourceId && tinted.has(mark.sourceId)) mark.fill = true;
+    } catch {
+      // Tint is cosmetic; keep the boxes even if the file cannot be re-read here.
     }
   }
   return { marks, ids };

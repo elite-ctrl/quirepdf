@@ -10,7 +10,7 @@ import {
   type PDFFont,
   type PDFPage,
 } from "pdf-lib";
-import { formatContents, INK_RGB, labelName, sortMarks, type Mark, type Point } from "@/lib/marks";
+import { formatContents, INK_RGB, labelName, sortMarks, SQUARE_TINT, type Mark, type Point } from "@/lib/marks";
 import { edgeToward } from "@/lib/geometry";
 
 function pdfDate(ms: number): string {
@@ -41,13 +41,15 @@ function arrowDraw(x1: number, y1: number, x2: number, y2: number): string {
   ].join("\n");
 }
 
-function appearance(doc: PDFDocument, rect: number[], body: string) {
+function appearance(doc: PDFDocument, rect: number[], body: string, fillAlpha?: number) {
   const [x1, y1, x2, y2] = rect;
+  const resources: Record<string, unknown> = { ProcSet: [PDFName.of("PDF")] };
+  if (fillAlpha !== undefined) resources.ExtGState = doc.context.obj({ Tint: doc.context.obj({ ca: fillAlpha }) });
   const stream = doc.context.flateStream(body, {
     Type: "XObject",
     Subtype: "Form",
     BBox: [0, 0, Math.max(1, x2 - x1), Math.max(1, y2 - y1)],
-    Resources: doc.context.obj({ ProcSet: [PDFName.of("PDF")] }),
+    Resources: doc.context.obj(resources as never),
   });
   return doc.context.obj({ N: stream });
 }
@@ -136,8 +138,34 @@ function makeCallout(doc: PDFDocument, page: PDFPage, mark: Mark) {
   });
 }
 
+function makeSquare(doc: PDFDocument, page: PDFPage, mark: Mark) {
+  const box = mark.quads[0];
+  if (!box || box.w < 0.2 || box.h < 0.2) return null;
+  const width = 1.6;
+  const half = width / 2;
+  // Rect is the box itself; the stroke sits just inside it so a re-import reads back the same box.
+  const rect = [box.x, box.y, box.x + box.w, box.y + box.h];
+  const [r, g, b] = INK_RGB[mark.ink];
+  const inner = `${num(half)} ${num(half)} ${num(Math.max(0.1, box.w - width))} ${num(Math.max(0.1, box.h - width))} re`;
+  const body = [
+    "q",
+    paint([r, g, b]),
+    ...(mark.fill ? ["q", "/Tint gs", `${inner} f`, "Q"] : []),
+    `${inner} S`,
+    "Q",
+  ].join("\n");
+  return doc.context.obj({
+    ...common(doc, page, mark, rect, [r, g, b]),
+    Subtype: PDFName.of("Square"),
+    BS: doc.context.obj({ W: width, S: PDFName.of("S") }),
+    ...(mark.fill ? { IC: [r, g, b] } : {}),
+    AP: appearance(doc, rect, body, mark.fill ? SQUARE_TINT : undefined),
+  });
+}
+
 function makeAnnot(doc: PDFDocument, page: PDFPage, mark: Mark): PDFDict | null {
   if (mark.kind === "arrow") return makeLine(doc, page, mark);
+  if (mark.kind === "square") return makeSquare(doc, page, mark);
   if (mark.kind === "callout") return makeCallout(doc, page, mark);
   if (!mark.quads.length) return null;
   let minX = Infinity;
@@ -315,4 +343,22 @@ export async function comparisonResultsPdf(
   for (const page of copied) out.addPage(page);
   out.setTitle(`Comparison — ${laterName}`);
   return out.save();
+}
+
+/** Source ids ("12R") of Square annotations in the file that carry an interior colour (tint). */
+export async function tintedSquares(bytes: Uint8Array, sourceIds: string[]): Promise<Set<string>> {
+  const found = new Set<string>();
+  if (!sourceIds.length) return found;
+  const doc = await PDFDocument.load(bytes, { updateMetadata: false, ignoreEncryption: true });
+  for (const id of sourceIds) {
+    const match = /^(\d+)R$/.exec(id);
+    if (!match) continue;
+    const annot = doc.context.lookup(PDFRef.of(Number(match[1]), 0));
+    if (!annot || typeof (annot as PDFDict).get !== "function") continue;
+    const dict = annot as PDFDict;
+    if (dict.get(PDFName.of("Subtype"))?.toString() !== "/Square") continue;
+    const ic = dict.get(PDFName.of("IC"));
+    if (ic && "size" in ic && typeof ic.size === "function" && (ic as { size(): number }).size() > 0) found.add(id);
+  }
+  return found;
 }

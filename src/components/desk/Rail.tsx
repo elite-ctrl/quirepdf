@@ -140,7 +140,7 @@ export function Rail({
               </option>
             ))}
           </select>
-          {active.kind !== "callout" && active.kind !== "arrow" && (
+          {active.kind !== "callout" && active.kind !== "arrow" && active.kind !== "square" && (
             <div className="mt-3 flex gap-2">
               {KINDS.filter((kind) => kind.id === "highlight" || kind.id === "underline" || kind.id === "strikeout").map((kind) => (
                 <button
@@ -154,6 +154,16 @@ export function Rail({
                 </button>
               ))}
             </div>
+          )}
+          {active.kind === "square" && (
+            <button
+              type="button"
+              aria-pressed={!!active.fill}
+              onClick={() => onPatch(active.id, { fill: !active.fill })}
+              className={`mt-3 h-11 w-full rounded-md px-2 text-sm ${active.fill ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+            >
+              Tint inside
+            </button>
           )}
           <button
             type="button"
@@ -170,7 +180,7 @@ export function Rail({
         {remarkList.length > 0 && (
           <li className="mb-3">
             <p className="px-1 pb-2 text-sm text-muted">
-              Figures and dates
+              Figures, dates and brackets
               <span className="ml-2 tabular-nums">{remarkList.length}</span>
             </p>
             <ul>
@@ -201,7 +211,7 @@ export function Rail({
         {filtered.length === 0 && remarkList.length === 0 && (
           <li className="px-1 py-6 text-sm text-pretty text-muted">
             {marks.length === 0
-              ? "No marks yet. Highlight a line, or drag a callout or an arrow."
+              ? "No marks yet. Highlight a line, or drag a callout, an arrow, or a square."
               : "Nothing in this filter."}
           </li>
         )}
@@ -222,7 +232,7 @@ export function Rail({
                 <span className="tabular-nums">p. {mark.page}</span>
               </span>
               <span className="mt-1 block line-clamp-2 text-sm text-pretty text-paper">
-                {mark.quote || (mark.kind === "callout" || mark.kind === "arrow" ? kindName(mark.kind) : "Marked text")}
+                {mark.quote || (mark.kind === "callout" || mark.kind === "arrow" || mark.kind === "square" ? kindName(mark.kind) : "Marked text")}
               </span>
               {mark.note && <span className="mt-1 block line-clamp-2 text-sm text-muted">{mark.note}</span>}
             </button>

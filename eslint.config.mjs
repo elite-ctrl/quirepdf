@@ -15,6 +15,8 @@ export default tseslint.config(
       ".nitro/**",
       "node_modules/**",
       "src/routeTree.gen.ts",
+      "dist-*/**",
+      "artifacts/**",
     ],
   },
   js.configs.recommended,
@@ -41,6 +43,11 @@ export default tseslint.config(
       ],
       "@typescript-eslint/no-explicit-any": "off",
     },
+  },
+  {
+    // Chrome extension scripts run with the `chrome` WebExtension API.
+    files: ["extension/**/*.js"],
+    languageOptions: { globals: { ...globals.webextensions } },
   },
   // Disable rules that conflict with Prettier formatting.
   prettier,
