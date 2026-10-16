@@ -244,3 +244,30 @@ test("figures: a line-opening dash bullet is not a minus sign", () => {
 test("figures: 千 in a unit such as 千瓦時 is not a thousand", () => {
   assert.deepEqual(flags("Petrol 1 kWh 6,978", "汽油1 千瓦時 6,978"), []);
 });
+
+test("dates: a date stated twice in English but once in the Chinese sentence is not flagged", async () => {
+  assert.deepEqual(
+    await documentFlags(
+      ["no borrowings as at 30 June 2026 (30 June 2025: Nil), and the current ratio improved to 2.5 times as at 30 June 2026 (30 June 2025: 2.4 times)."],
+      ["於2026年6月30日並無借貸（2025年6月30日：無），流動比率改善至約2.5倍（2025年6月30日：約2.4倍）。"],
+    ),
+    [],
+  );
+});
+
+test("dates: a date missing from the target page is still reported", async () => {
+  assert.deepEqual(await documentFlags(["as at 30 June 2026 and 31 March 2026"], ["於2026年6月30日"]), ["p1 EN date 31 March 2026×1"]);
+});
+
+test("dates: two years sharing one day and month match either way", () => {
+  assert.deepEqual(flags("for the years ended 30 June 2026 and 2025.", "截至2026年及2025年6月30日止年度"), []);
+});
+
+test("dates: a heading over year columns is not one date", () => {
+  assert.deepEqual(flags("For the year ended 30 June\n2026 2025 2024", "2026年 2025年 2024年"), []);
+});
+
+test("figures: a year after a comma with no space is still read", () => {
+  assert.deepEqual(flags("there were no (2025: nil,2024:nil) cases", "概無 (2025年:無, 2024年:無) 案件"), []);
+  assert.deepEqual(flags("Exchange Square,338 King's Road", "華懋交易廣場, 英皇道338號"), []);
+});

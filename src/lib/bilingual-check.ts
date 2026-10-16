@@ -238,6 +238,16 @@ function monthKey(year: number, month: number): string | null {
 /** Date rules in priority order: ranges first, then full dates, then month-year, then Chinese-numeral years. */
 const DATE_RULES: DateRule[] = [
   {
+    // 2026年及2025年6月30日: both years share the month and day.
+    re: new RegExp(`${YEAR}\\s*年\\s*(?:及|和|與|与|、|或)\\s*${YEAR}\\s*年\\s*${CN_MONTH}\\s*月\\s*${CN_DAY}\\s*日`, "g"),
+    keys: (m) => [iso(intOf(m[1]), intOf(m[3]), intOf(m[4])), iso(intOf(m[2]), intOf(m[3]), intOf(m[4]))],
+  },
+  {
+    // 30 June 2026 and 2025: both years share the day and month.
+    re: new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH})\\.?\\s+(\\d{4})\\s*(?:and|&|or)\\s*(\\d{4})\\b`, "gi"),
+    keys: (m) => [iso(+m[3], monthOf(m[2]), +m[1]), iso(+m[4], monthOf(m[2]), +m[1])],
+  },
+  {
     // 2025年11月1日至12月31日
     re: new RegExp(`${YEAR}\\s*年\\s*${CN_MONTH}\\s*月\\s*${CN_DAY}\\s*日${TC_TO}${CN_MONTH}\\s*月\\s*${CN_DAY}\\s*日`, "g"),
     keys: (m) => {
@@ -276,7 +286,8 @@ const DATE_RULES: DateRule[] = [
     keys: (m) => [iso(intOf(m[1]), intOf(m[2]), intOf(m[3]))],
   },
   {
-    re: new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH})\\.?\\s+(\\d{4})\\b`, "gi"),
+    // "For the year ended 30 June / 2026 2025 2024" is a heading over year columns, not one date.
+    re: new RegExp(`\\b(\\d{1,2})(?:st|nd|rd|th)?\\s+(${MONTH})\\.?\\s+(\\d{4})\\b(?![ \\t]+(?:19|20)\\d{2}\\b)`, "gi"),
     keys: (m) => [iso(+m[3], monthOf(m[2]), +m[1])],
   },
   {
@@ -320,7 +331,7 @@ const DATE_RULES: DateRule[] = [
   },
   {
     // December 2025; capitalised so "may 2025" in running text is not read as a date.
-    re: new RegExp(`\\b(${MONTH})\\.?,?\\s+(\\d{4})\\b`, "g"),
+    re: new RegExp(`\\b(${MONTH})\\.?,?\\s+(\\d{4})\\b(?![ \\t]+(?:19|20)\\d{2}\\b)`, "g"),
     keys: (m) => [monthKey(+m[2], monthOf(m[1]))],
   },
   {
@@ -384,7 +395,7 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
     .join("")
     .replace(/(\d[ \t]*\n)([\s%％]*)/g, (_, lead: string, rest: string) => lead + rest.replace(/[%％]/g, " "));
   const figure = new RegExp(
-    `(?:^|[^\\d.,，]|(?<=\\D)\\.)(\\(?\\s*(?:(?<![A-Za-z0-9-])[-−])?(?:${CUR})?\\s*(?:${NUM})(?:\\s*(?:[\\]）)]\\s*)?(?:${TAIL}))?\\)?)`,
+    `(?:^|[^\\d.,，]|(?<=\\D)[.,，])(\\(?\\s*(?:(?<![A-Za-z0-9-])[-−])?(?:${CUR})?\\s*(?:${NUM})(?:\\s*(?:[\\]）)]\\s*)?(?:${TAIL}))?\\)?)`,
     "gi",
   );
   for (const match of bare.matchAll(figure)) {
@@ -862,6 +873,14 @@ function pairOccurrences(
   }
   for (const slot of target) {
     if (!slot.used && kind === "figure" && slot.token.key === "12") slot.used = near(sourceText, align.toSource(slot.page));
+  }
+  // Chinese often states a repeated date once per sentence ("as at 30 June 2026 … as at 30 June 2026" becomes one
+  // 於2026年6月30日), so a date is only reported when the other side has no such date nearby at all.
+  if (kind === "date") {
+    const present = (slots: Slot[], key: string, home: number) =>
+      slots.some((other) => other.token.key === key && Math.abs(other.page - home) <= PAGE_WINDOW);
+    for (const slot of source) if (!slot.used) slot.used = present(target, slot.token.key, align.toTarget(slot.page));
+    for (const slot of target) if (!slot.used) slot.used = present(source, slot.token.key, align.toSource(slot.page));
   }
   const collect = (slots: Slot[], place: (page: number) => number) => {
     const found = new Map<number, SideGap[]>();
