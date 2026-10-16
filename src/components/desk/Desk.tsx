@@ -33,6 +33,7 @@ import { downloadBlob, marksToMarkdown, safeStem } from "@/lib/markdown";
 import {
   INKS,
   LABELS,
+  nudgeMark,
   type InkId,
   type LabelId,
   type Mark,
@@ -169,6 +170,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const mateIntent = useRef<"compare" | "bilingual">("compare");
   const openTicket = useRef(0);
   const gestureBase = useRef<Mark[] | null>(null);
+  const nudgeRef = useRef<{ id: string; at: number } | null>(null);
   const scaleRef = useRef(scale);
   const earlierNameRef = useRef<string | null>(null);
   const stayRef = useRef(false);
@@ -687,7 +689,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       else if (key === "a") chooseTool("arrow");
       else if (key === "r") chooseTool("square");
       else if (key === "v") chooseTool("select");
-      else if ((key === "delete" || key === "backspace") && activeIdRef.current) {
+      else if (event.key.startsWith("Arrow") && activeIdRef.current && target?.tagName !== "SELECT") {
+        if (nudgeActive(event.key, event.shiftKey ? 10 : 1)) event.preventDefault();
+      } else if ((key === "delete" || key === "backspace") && activeIdRef.current) {
         event.preventDefault();
         removeMark(activeIdRef.current);
       }
@@ -715,6 +719,38 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     if (undoRef.current.length > 60) undoRef.current.shift();
     redoRef.current = [];
     bumpHistory();
+  }
+
+  /** Arrow keys move the selected shape by `step` points in the direction shown on screen. */
+  function nudgeActive(key: string, step: number): boolean {
+    const id = activeIdRef.current;
+    const mark = marksRef.current.find((item) => item.id === id);
+    if (!mark) return false;
+    const visual = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }[key];
+    if (!visual) return false;
+    let dx = visual[0];
+    let dy = -visual[1];
+    const view = viewports.current.get(mark.page);
+    if (view) {
+      const [x0, y0] = view.convertToPdfPoint(0, 0);
+      const [x1, y1] = view.convertToPdfPoint(visual[0], visual[1]);
+      const length = Math.hypot(x1 - x0, y1 - y0) || 1;
+      dx = (x1 - x0) / length;
+      dy = (y1 - y0) / length;
+    }
+    const moved = nudgeMark(mark, dx * step, dy * step);
+    if (!moved) return false;
+    commitNoteHistory();
+    // A burst of presses on one mark is a single undo step.
+    const now = Date.now();
+    const last = nudgeRef.current;
+    const record = !last || last.id !== mark.id || now - last.at > 700;
+    nudgeRef.current = { id: mark.id, at: now };
+    commit(
+      marksRef.current.map((item) => (item.id === mark.id ? moved : item)),
+      record,
+    );
+    return true;
   }
 
   function placeShape(pageNumber: number, place: ShapePlace) {
@@ -826,7 +862,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       setSessionKey(null);
       bumpHistory();
       setStatus("Reading marks already in the file…");
-      const parsed = await readExisting(nextPdf);
+      const parsed = await readExisting(nextPdf, bytes);
       if (ticket !== openTicket.current || pdfRef.current !== nextPdf) return;
       marksRef.current = parsed.marks;
       importedRef.current = parsed.ids;
@@ -987,7 +1023,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       let nextMarks = session?.marks ?? [];
       let nextImported = session?.importedSourceIds ?? [];
       if (!session) {
-        const parsed = await readExisting(right.pdf);
+        const parsed = await readExisting(right.pdf, right.bytes);
         nextMarks = parsed.marks;
         nextImported = parsed.ids;
       }

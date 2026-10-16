@@ -155,6 +155,16 @@ export function Rail({
               ))}
             </div>
           )}
+          {active.kind === "square" && (
+            <button
+              type="button"
+              aria-pressed={!!active.fill}
+              onClick={() => onPatch(active.id, { fill: !active.fill })}
+              className={`mt-3 h-11 w-full rounded-md px-2 text-sm ${active.fill ? "bg-brass text-paper" : "bg-raised text-paper"}`}
+            >
+              Tint inside
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onDelete(active.id)}

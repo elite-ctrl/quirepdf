@@ -44,6 +44,8 @@ export type Mark = {
   from?: Point;
   to?: Point;
   sourceId?: string;
+  /** Square only: light tint inside the box. */
+  fill?: boolean;
   createdAt: number;
 };
 
@@ -94,6 +96,21 @@ export function nearestInk(channels: [number, number, number]): InkId {
     }
   }
   return best;
+}
+
+/** Fill opacity for a tinted square, on screen and in the exported PDF. */
+export const SQUARE_TINT = 0.15;
+
+/** Move a shape mark by a PDF-space delta. Text marks stay with their text. */
+export function nudgeMark(mark: Mark, dx: number, dy: number): Mark | null {
+  if (mark.kind !== "square" && mark.kind !== "callout" && mark.kind !== "arrow") return null;
+  const shift = (point?: Point) => (point ? { x: point.x + dx, y: point.y + dy } : undefined);
+  return {
+    ...mark,
+    quads: mark.quads.map((quad) => ({ ...quad, x: quad.x + dx, y: quad.y + dy })),
+    from: shift(mark.from),
+    to: shift(mark.to),
+  };
 }
 
 export function sortMarks(marks: Mark[]): Mark[] {
@@ -151,6 +168,7 @@ export function sanitizeMark(value: unknown): Mark | null {
     from,
     to,
     sourceId: typeof mark.sourceId === "string" ? mark.sourceId : undefined,
+    fill: kind === "square" && mark.fill === true ? true : undefined,
     createdAt: typeof mark.createdAt === "number" ? mark.createdAt : Date.now(),
   };
 }
