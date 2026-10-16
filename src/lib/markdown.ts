@@ -4,7 +4,7 @@ export function marksToMarkdown(fileName: string, marks: Mark[]): string {
   const sorted = sortMarks(marks);
   const when = new Date().toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
   const lines = [
-    `# Quire notes — ${fileName}`,
+    `# Faircopy notes — ${fileName}`,
     "",
     `${sorted.length} mark${sorted.length === 1 ? "" : "s"} · ${when}`,
     "",

@@ -1274,7 +1274,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     >
       <header className="shrink-0 border-b border-line-dark">
         <div className="flex h-14 items-center gap-2 overflow-x-auto px-3">
-          <p className="quire-word font-display text-2xl leading-none tracking-tight">Quire</p>
+          <p className="quire-word font-display text-2xl leading-none tracking-tight">Faircopy</p>
           {fileName && (
             <p className="hidden min-w-0 flex-1 truncate text-sm text-muted sm:block">{fileName}</p>
           )}
@@ -1755,7 +1755,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
             className="shrink-0 text-paper"
             title={studio ? "Studio copy. No passcode." : "Licensed copy. Do not copy or republish this extension."}
           >
-            © Quire
+            © Faircopy
           </span>
         ) : (
           <button type="button" onClick={() => setUsageOpen(true)} className="h-11 shrink-0 rounded-md px-2 text-paper">
@@ -2052,11 +2052,11 @@ function Pane({
 function messageFrom(error: unknown): string {
   if (error && typeof error === "object" && "name" in error) {
     const name = String((error as { name: string }).name);
-    if (name === "PasswordException") return "This PDF is password-protected. Quire cannot open it.";
-    if (name === "InvalidPDFException") return "That file is not a PDF Quire can read.";
+    if (name === "PasswordException") return "This PDF is password-protected. Faircopy cannot open it.";
+    if (name === "InvalidPDFException") return "That file is not a PDF Faircopy can read.";
   }
   if (error instanceof Error && /password/i.test(error.message)) {
-    return "This PDF is password-protected. Quire cannot open it.";
+    return "This PDF is password-protected. Faircopy cannot open it.";
   }
-  return "Quire could not open that file. It may be damaged or not a PDF.";
+  return "Faircopy could not open that file. It may be damaged or not a PDF.";
 }
