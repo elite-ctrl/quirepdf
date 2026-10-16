@@ -11,6 +11,7 @@ import {
   Highlighter,
   Languages,
   MessageSquare,
+  Square as SquareIcon,
   Minus,
   MousePointer2,
   PanelRight,
@@ -58,6 +59,7 @@ const TOOLS: { id: Tool; name: string; hint: string; icon: typeof MousePointer2 
   { id: "strikeout", name: "Strike", hint: "Strikeout (S)", icon: Strikethrough },
   { id: "callout", name: "Callout", hint: "Callout (C). Press the point, then drag the box.", icon: MessageSquare },
   { id: "arrow", name: "Arrow", hint: "Arrow (A). Drag. The head is where you let go.", icon: ArrowUpRight },
+  { id: "square", name: "Square", hint: "Square (R). Drag to draw a box.", icon: SquareIcon },
 ];
 
 type MateDoc = {
@@ -681,6 +683,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       else if (key === "s") chooseTool("strikeout");
       else if (key === "c") chooseTool("callout");
       else if (key === "a") chooseTool("arrow");
+      else if (key === "r") chooseTool("square");
       else if (key === "v") chooseTool("select");
       else if ((key === "delete" || key === "backspace") && activeIdRef.current) {
         event.preventDefault();
@@ -724,9 +727,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       label: draft.label,
       note: "",
       quote: "",
-      quads: place.kind === "callout" ? [place.quad] : [],
+      quads: place.kind === "arrow" ? [] : [place.quad],
       from: place.kind === "arrow" ? place.from : undefined,
-      to: place.kind === "arrow" ? place.to : place.tip,
+      to: place.kind === "arrow" ? place.to : place.kind === "callout" ? place.tip : undefined,
       createdAt: Date.now(),
     };
     commit([...marksRef.current, mark], true);
@@ -1591,7 +1594,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                     Mark the text. Keep the file.
                   </h1>
                   <p className="mt-4 max-w-lg text-base text-pretty text-muted">
-                    Highlight, underline, or strike a passage, or drag a callout or an arrow. Each mark takes a note and a colour.
+                    Highlight, underline, or strike a passage, or drag a callout, an arrow, or a square. Each mark takes a note and a colour.
                     Nothing is uploaded. Marked PDF downloads only the pages you marked, for Acrobat or Preview. Or take a comment sheet.
                   </p>
                   <div className="mt-6">
@@ -1697,6 +1700,8 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
                     ? "Press where it should point, then drag the box into place. Select it and drag the bar to move the box and the point together. Drag an edge or a corner to resize. The dot moves only the point."
                     : tool === "arrow"
                       ? "Drag the arrow. Select it, then drag the line or either end."
+                      : tool === "square"
+                        ? "Drag to draw a square. Select it, then drag the edge to move it or a corner to resize."
                       : tool === "select"
                         ? "Select is on. Click a mark to move it, or choose Highlight, Underline, or Strike."
                         : `Select a line, in the colour chosen above.${staySelection ? " Stay selection keeps that line selected." : ""}${joinLines ? " Join lines removes the breaks when you copy." : ""}`}

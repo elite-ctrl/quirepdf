@@ -7,7 +7,8 @@ type PdfDoc = import("pdfjs-dist").PDFDocumentProxy;
 
 export type ShapePlace =
   | { kind: "arrow"; from: Point; to: Point }
-  | { kind: "callout"; quad: { x: number; y: number; w: number; h: number }; tip: Point };
+  | { kind: "callout"; quad: { x: number; y: number; w: number; h: number }; tip: Point }
+  | { kind: "square"; quad: { x: number; y: number; w: number; h: number } };
 
 type ResizeEdge = "nw" | "ne" | "sw" | "se" | "n" | "s" | "e" | "w";
 type DragMode = "body" | "from" | "to" | "box" | ResizeEdge;
@@ -208,6 +209,17 @@ export function PdfPage({
         const center = dist < 8 ? { x: tip.x + 78, y: tip.y + 42 } : current.current;
         const quad = clampQuad({ x: center.x - 74, y: center.y - 28, w: 148, h: 56 }, viewportRef.current);
         placeRef.current?.(pageNumber, { kind: "callout", quad, tip });
+      } else if (toolNow === "square") {
+        const w = Math.abs(current.current.x - current.start.x);
+        const h = Math.abs(current.current.y - current.start.y);
+        if (w < 4 || h < 4) return;
+        const quad = {
+          x: Math.min(current.start.x, current.current.x),
+          y: Math.min(current.start.y, current.current.y),
+          w,
+          h,
+        };
+        placeRef.current?.(pageNumber, { kind: "square", quad });
       }
       return;
     }
@@ -245,7 +257,10 @@ export function PdfPage({
         moveRef.current?.(current.id, patch);
       } else if (isResize(current.mode) && current.box && viewportRef.current) {
         const [vx, vy] = viewportRef.current.convertToViewportPoint(next.x, next.y);
-        moveRef.current?.(current.id, { quads: [resizeBox(current.box, current.mode, { x: vx, y: vy }, viewportRef.current)] });
+        const min = current.mark.kind === "square" ? { w: 8, h: 8 } : { w: 72, h: 48 };
+        moveRef.current?.(current.id, {
+          quads: [resizeBox(current.box, current.mode, { x: vx, y: vy }, viewportRef.current, min)],
+        });
       }
     };
     const up = () => {
@@ -262,7 +277,7 @@ export function PdfPage({
   function onShellPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (pane === "mate") return;
     const toolNow = toolRef.current;
-    if (toolNow !== "arrow" && toolNow !== "callout") return;
+    if (toolNow !== "arrow" && toolNow !== "callout" && toolNow !== "square") return;
     const target = event.target as Element | null;
     if (target?.closest("[data-handle], .quire-callout")) return;
     const start = pointFrom(event);
@@ -300,7 +315,7 @@ export function PdfPage({
   const width = (base?.w ?? 595.28) * scale;
   const height = (base?.h ?? 841.89) * scale;
   const pageMarks = marks.filter((mark) => mark.page === pageNumber);
-  const drawing = tool === "arrow" || tool === "callout";
+  const drawing = tool === "arrow" || tool === "callout" || tool === "square";
   const viewOf = (point: Point) => {
     if (!viewport) return { x: 0, y: 0 };
     const [x, y] = viewport.convertToViewportPoint(point.x, point.y);
@@ -403,6 +418,44 @@ export function PdfPage({
                             r={11}
                             onPointerDown={(event) => beginDrag(event, mark, "to")}
                           />
+                        )}
+                      </g>
+                    );
+                  }
+                  if (mark.kind === "square" && mark.quads[0]) {
+                    const view = quadToView(mark.quads[0], viewport);
+                    const right = view.left + view.width;
+                    const bottom = view.top + view.height;
+                    return (
+                      <g key={mark.id} id={`quire-mark-${mark.id}`} className="quire-mark" data-kind="square">
+                        <rect
+                          x={view.left}
+                          y={view.top}
+                          width={view.width}
+                          height={view.height}
+                          fill="none"
+                          stroke="transparent"
+                          strokeWidth={14}
+                          style={{ pointerEvents: "stroke" }}
+                          onPointerDown={(event) => beginDrag(event, mark, "box")}
+                        />
+                        <rect
+                          x={view.left}
+                          y={view.top}
+                          width={view.width}
+                          height={view.height}
+                          fill="none"
+                          stroke={color}
+                          strokeWidth={active ? 2.5 : 2}
+                          style={{ pointerEvents: "none" }}
+                        />
+                        {active && (
+                          <>
+                            <Handle x={view.left} y={view.top} onPointerDown={(event) => beginDrag(event, mark, "nw")} />
+                            <Handle x={right} y={view.top} onPointerDown={(event) => beginDrag(event, mark, "ne")} />
+                            <Handle x={view.left} y={bottom} onPointerDown={(event) => beginDrag(event, mark, "sw")} />
+                            <Handle x={right} y={bottom} onPointerDown={(event) => beginDrag(event, mark, "se")} />
+                          </>
                         )}
                       </g>
                     );
@@ -530,13 +583,14 @@ function resizeBox(
   mode: ResizeEdge,
   pointer: Point,
   view: ViewportLike,
+  min: { w: number; h: number } = { w: 72, h: 48 },
 ) {
   let left = box.left;
   let top = box.top;
   let right = box.left + box.width;
   let bottom = box.top + box.height;
-  const minW = 72;
-  const minH = 48;
+  const minW = min.w;
+  const minH = min.h;
   if (mode === "nw" || mode === "sw" || mode === "w") left = pointer.x;
   if (mode === "ne" || mode === "se" || mode === "e") right = pointer.x;
   if (mode === "nw" || mode === "ne" || mode === "n") top = pointer.y;
@@ -630,6 +684,20 @@ function Sketch({
   start: Point;
   current: Point;
 }) {
+  if (tool === "square") {
+    return (
+      <rect
+        x={Math.min(start.x, current.x)}
+        y={Math.min(start.y, current.y)}
+        width={Math.abs(current.x - start.x)}
+        height={Math.abs(current.y - start.y)}
+        fill="none"
+        stroke="#000"
+        strokeWidth={2}
+        strokeDasharray="4 3"
+      />
+    );
+  }
   if (tool === "callout") {
     const left = current.x - 74;
     const top = current.y - 28;

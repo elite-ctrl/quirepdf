@@ -55,6 +55,7 @@ const KIND_BY_SUBTYPE: Record<string, Kind> = {
   StrikeOut: "strikeout",
   Line: "arrow",
   FreeText: "callout",
+  Square: "square",
 };
 
 function colorChannels(color: unknown): [number, number, number] | null {

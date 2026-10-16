@@ -136,8 +136,31 @@ function makeCallout(doc: PDFDocument, page: PDFPage, mark: Mark) {
   });
 }
 
+function makeSquare(doc: PDFDocument, page: PDFPage, mark: Mark) {
+  const box = mark.quads[0];
+  if (!box || box.w < 0.2 || box.h < 0.2) return null;
+  const width = 1.6;
+  const half = width / 2;
+  // Rect is the box itself; the stroke sits just inside it so a re-import reads back the same box.
+  const rect = [box.x, box.y, box.x + box.w, box.y + box.h];
+  const [r, g, b] = INK_RGB[mark.ink];
+  const body = [
+    "q",
+    paint([r, g, b]),
+    `${num(half)} ${num(half)} ${num(Math.max(0.1, box.w - width))} ${num(Math.max(0.1, box.h - width))} re S`,
+    "Q",
+  ].join("\n");
+  return doc.context.obj({
+    ...common(doc, page, mark, rect, [r, g, b]),
+    Subtype: PDFName.of("Square"),
+    BS: doc.context.obj({ W: width, S: PDFName.of("S") }),
+    AP: appearance(doc, rect, body),
+  });
+}
+
 function makeAnnot(doc: PDFDocument, page: PDFPage, mark: Mark): PDFDict | null {
   if (mark.kind === "arrow") return makeLine(doc, page, mark);
+  if (mark.kind === "square") return makeSquare(doc, page, mark);
   if (mark.kind === "callout") return makeCallout(doc, page, mark);
   if (!mark.quads.length) return null;
   let minX = Infinity;

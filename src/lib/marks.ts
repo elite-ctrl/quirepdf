@@ -4,6 +4,7 @@ export const KINDS = [
   { id: "strikeout", name: "Strikeout" },
   { id: "callout", name: "Callout" },
   { id: "arrow", name: "Arrow" },
+  { id: "square", name: "Square" },
 ] as const;
 
 export const LABELS = [
