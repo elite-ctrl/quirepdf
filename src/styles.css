@@ -253,12 +253,13 @@
   pointer-events: none;
 }
 
-.quire-selecting .quire-text {
+/* In Select, page text stays selectable; only the marks themselves and their handles catch the pointer. */
+.quire-selecting .quire-marks {
+  z-index: 3;
   pointer-events: none;
 }
 
-.quire-selecting .quire-marks {
-  z-index: 3;
+.quire-selecting .quire-marks :is(.quire-mark, [data-handle]) {
   pointer-events: auto;
 }
 
