@@ -204,3 +204,24 @@ test("brackets: bracket marks land on the target bracket", async () => {
   assert.equal(marks[0].quote, "(");
   assert.equal(marks[0].note, "Bracket: （ is not closed.");
 });
+
+test("a column-heading % on the next line is not joined to the year above it", () => {
+  assert.deepEqual(flags("2026\n2025\n%\n%\n", "2026年\n2025年\n%\n%\n"), []);
+});
+
+test("pages that sit a few pages off proportion are matched by content", async () => {
+  const filler = (n: number) => Array.from({ length: n }, (_, index) => `Page ${index + 1}`);
+  const en = [...filler(7), "joined in August 1995 and left in June 1997", ...filler(2)];
+  const tc = [...filler(4), "於1995年8月加入，於1997年6月離開", ...filler(5)];
+  const pairs = await checkBilingual(doc(en), doc(tc));
+  const flagged = pairs.flatMap((p) => [...p.datesSource, ...p.datesTarget]);
+  assert.deepEqual(flagged, []);
+});
+
+test("a date that is on no nearby page is still reported", async () => {
+  const filler = (n: number) => Array.from({ length: n }, (_, index) => `Page ${index + 1}`);
+  const en = [...filler(9), "joined in August 1995"];
+  const tc = [...filler(4), "於1996年8月加入", ...filler(5)];
+  const pairs = await checkBilingual(doc(en), doc(tc));
+  assert.equal(pairs.flatMap((p) => [...p.datesSource, ...p.datesTarget]).length, 2);
+});

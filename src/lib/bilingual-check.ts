@@ -378,7 +378,11 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
     }
   }
 
-  const bare = [...text].map((char, index) => (mask[index] ? " " : char)).join("");
+  // A "%" that starts a new line belongs to a column heading, not to the number above it (2025 / %).
+  const bare = [...text]
+    .map((char, index) => (mask[index] ? " " : char))
+    .join("")
+    .replace(/(\d[ \t]*\n)([\s%％]*)/g, (_, lead: string, rest: string) => lead + rest.replace(/[%％]/g, " "));
   const figure = new RegExp(
     `(?:^|[^\\d.,，]|(?<=\\D)\\.)(\\(?\\s*(?:(?<![A-Za-z0-9-])[-−])?(?:${CUR})?\\s*(?:${NUM})(?:\\s*(?:[\\]）)]\\s*)?(?:${TAIL}))?\\)?)`,
     "gi",
@@ -708,6 +712,73 @@ function counterpart(page: number, from: number, to: number): number {
   return Math.max(1, Math.min(to, Math.round(((page - 1) * (to - 1)) / (from - 1)) + 1));
 }
 
+/** How far from the proportional page a page may be matched by its content. */
+const ALIGN_REACH = 4;
+
+type Align = { toTarget: (sourcePage: number) => number; toSource: (targetPage: number) => number };
+
+function overlap(left: Token[], right: Token[]): number {
+  const wanted = new Map<string, number>();
+  for (const token of left) {
+    const key = `${token.kind}:${token.key}`;
+    wanted.set(key, (wanted.get(key) ?? 0) + 1);
+  }
+  let score = 0;
+  for (const token of right) {
+    const key = `${token.kind}:${token.key}`;
+    const count = wanted.get(key) ?? 0;
+    if (count > 0) {
+      score += 1;
+      wanted.set(key, count - 1);
+    }
+  }
+  return score;
+}
+
+/**
+ * Pages rarely line up one-to-one when the two files are laid out separately. Starting from the proportional
+ * page, each target page moves to the nearby source page that shares the most figures and dates with it.
+ */
+function alignPages(sourceTokens: Map<number, Token[]>, targetTokens: Map<number, Token[]>, sourceCount: number, targetCount: number): Align {
+  const chosen = new Map<number, number>();
+  const scores = new Map<number, number>();
+  for (let page = 1; page <= targetCount; page += 1) {
+    const home = counterpart(page, targetCount, sourceCount);
+    const mine = targetTokens.get(page) ?? [];
+    let best = home;
+    let bestScore = overlap(mine, sourceTokens.get(home) ?? []);
+    for (let reach = 1; reach <= ALIGN_REACH; reach += 1) {
+      for (const candidate of [home - reach, home + reach]) {
+        if (candidate < 1 || candidate > sourceCount) continue;
+        const score = overlap(mine, sourceTokens.get(candidate) ?? []);
+        if (score > bestScore) {
+          best = candidate;
+          bestScore = score;
+        }
+      }
+    }
+    // Only move off the proportional page on solid evidence: two or more shared tokens covering half the page.
+    if (best !== home && (bestScore < 2 || bestScore * 2 < mine.length)) {
+      best = home;
+      bestScore = overlap(mine, sourceTokens.get(home) ?? []);
+    }
+    chosen.set(page, best);
+    scores.set(page, bestScore);
+  }
+  const back = new Map<number, number>();
+  for (const [targetPage, sourcePage] of chosen) {
+    const had = back.get(sourcePage);
+    const home = counterpart(sourcePage, sourceCount, targetCount);
+    const score = scores.get(targetPage) ?? 0;
+    const hadScore = had === undefined ? -1 : (scores.get(had) ?? 0);
+    if (score > hadScore || (score === hadScore && had !== undefined && Math.abs(targetPage - home) < Math.abs(had - home))) back.set(sourcePage, targetPage);
+  }
+  return {
+    toSource: (page) => chosen.get(page) ?? counterpart(page, targetCount, sourceCount),
+    toTarget: (page) => back.get(page) ?? counterpart(page, sourceCount, targetCount),
+  };
+}
+
 type Slot = { page: number; token: Token; used: boolean };
 
 function slotsOf(pages: Map<number, Token[]>, kind: Token["kind"]): Slot[] {
@@ -749,8 +820,7 @@ function pairOccurrences(
   targetTokens: Map<number, Token[]>,
   sourceText: Map<number, { text: string }>,
   targetText: Map<number, { text: string }>,
-  sourceCount: number,
-  targetCount: number,
+  align: Align,
   kind: Token["kind"],
 ): { source: Map<number, SideGap[]>; target: Map<number, SideGap[]> } {
   const source = slotsOf(sourceTokens, kind);
@@ -765,7 +835,7 @@ function pairOccurrences(
     for (const exact of [true, false]) {
       for (const slot of source) {
         if (slot.used) continue;
-        const home = counterpart(slot.page, sourceCount, targetCount);
+        const home = align.toTarget(slot.page);
         const wanted = exact ? [{ key: slot.token.key, accepts: () => true }] : aliasesOf(slot.token);
         for (const want of wanted) {
           const hit = (byKey.get(want.key) ?? []).find(
@@ -783,10 +853,10 @@ function pairOccurrences(
   const near = (texts: Map<number, { text: string }>, home: number) =>
     [...texts].some(([page, value]) => Math.abs(page - home) <= PAGE_WINDOW && hasBareNumber(value.text, "12"));
   for (const slot of source) {
-    if (!slot.used && kind === "figure" && slot.token.key === "12") slot.used = near(targetText, counterpart(slot.page, sourceCount, targetCount));
+    if (!slot.used && kind === "figure" && slot.token.key === "12") slot.used = near(targetText, align.toTarget(slot.page));
   }
   for (const slot of target) {
-    if (!slot.used && kind === "figure" && slot.token.key === "12") slot.used = near(sourceText, counterpart(slot.page, targetCount, sourceCount));
+    if (!slot.used && kind === "figure" && slot.token.key === "12") slot.used = near(sourceText, align.toSource(slot.page));
   }
   const collect = (slots: Slot[], place: (page: number) => number) => {
     const found = new Map<number, SideGap[]>();
@@ -803,42 +873,28 @@ function pairOccurrences(
   };
   return {
     // Source gaps are shown on the counterpart target page.
-    source: collect(source, (page) => counterpart(page, sourceCount, targetCount)),
+    source: collect(source, (page) => align.toTarget(page)),
     target: collect(target, (page) => page),
   };
 }
 
-/** Picks the source page whose figures and dates best match a target page, near its counterpart. */
+/** Picks the source page whose figures and dates best match a target page, near its aligned page. */
 function pairedSourcePage(
   targetPage: number,
   sourceTokens: Map<number, Token[]>,
   targetTokens: Map<number, Token[]>,
   sourceCount: number,
-  targetCount: number,
+  align: Align,
 ): number | null {
   if (!sourceCount) return null;
-  const home = counterpart(targetPage, targetCount, sourceCount);
-  const wanted = new Map<string, number>();
-  for (const token of targetTokens.get(targetPage) ?? []) {
-    const key = `${token.kind}:${token.key}`;
-    wanted.set(key, (wanted.get(key) ?? 0) + 1);
-  }
+  const home = align.toSource(targetPage);
+  const mine = targetTokens.get(targetPage) ?? [];
   let best = home;
   let bestScore = -1;
   for (let page = home - PAGE_WINDOW; page <= home + PAGE_WINDOW; page += 1) {
     if (page < 1 || page > sourceCount) continue;
-    const left = new Map(wanted);
-    let score = 0;
-    for (const token of sourceTokens.get(page) ?? []) {
-      const key = `${token.kind}:${token.key}`;
-      const count = left.get(key) ?? 0;
-      if (count > 0) {
-        score += 1;
-        left.set(key, count - 1);
-      }
-    }
-    const better = score > bestScore || (score === bestScore && Math.abs(page - home) < Math.abs(best - home));
-    if (better) {
+    const score = overlap(mine, sourceTokens.get(page) ?? []);
+    if (score > bestScore || (score === bestScore && Math.abs(page - home) < Math.abs(best - home))) {
       best = page;
       bestScore = score;
     }
@@ -863,14 +919,15 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
   const targetTokens = new Map<number, Token[]>();
   for (const [page, value] of sourceText) sourceTokens.set(page, tokensIn(value.text, value.faces));
   for (const [page, value] of targetText) targetTokens.set(page, tokensIn(value.text, value.faces));
-  const sides = [sourceTokens, targetTokens, sourceText, targetText, source.numPages, target.numPages] as const;
+  const align = alignPages(sourceTokens, targetTokens, source.numPages, target.numPages);
+  const sides = [sourceTokens, targetTokens, sourceText, targetText, align] as const;
   const dates = pairOccurrences(...sides, "date");
   const figures = pairOccurrences(...sides, "figure");
   const brackets = bracketIssues(targetText);
   return pages.map((page) => {
     const targetPage = page <= target.numPages ? page : null;
     const sourcePage = targetPage
-      ? pairedSourcePage(page, sourceTokens, targetTokens, source.numPages, target.numPages)
+      ? pairedSourcePage(page, sourceTokens, targetTokens, source.numPages, align)
       : page <= source.numPages
         ? page
         : null;
