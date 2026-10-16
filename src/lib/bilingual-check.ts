@@ -465,7 +465,7 @@ function figureId(): string {
   return `figure-${crypto.randomUUID()}`;
 }
 
-function markText(page: number, quads: Quad[], quote: string, ink: "crimson" | "steel", label: "number" | "style", kind: "highlight" | "underline"): Mark {
+function markText(page: number, quads: Quad[], quote: string, note: string, ink: "brass" | "steel", label: "number" | "style", kind: "highlight" | "underline"): Mark {
   return {
     id: figureId(),
     page,
@@ -473,14 +473,14 @@ function markText(page: number, quads: Quad[], quote: string, ink: "crimson" | "
     pass: 1,
     ink,
     label,
-    note: quote,
+    note,
     quote,
     quads,
     createdAt: Date.now(),
   };
 }
 
-function callout(page: number, note: string, box: Quad, tip: { x: number; y: number }, ink: "crimson" | "steel", label: "number" | "style"): Mark {
+function callout(page: number, note: string, box: Quad, tip: { x: number; y: number }, ink: "brass" | "steel", label: "number" | "style"): Mark {
   return {
     id: figureId(),
     page,
@@ -503,7 +503,7 @@ function placeCallout(
   width: number,
   height: number,
   stack: number,
-  ink: "crimson" | "steel" = "crimson",
+  ink: "brass" | "steel" = "brass",
   label: "number" | "style" = "number",
 ): Mark {
   const boxW = 210;
@@ -519,7 +519,7 @@ function placeCallout(
   return callout(page, note, { x: 36, y, w: boxW, h: boxH }, { x: 48, y: y - 10 }, ink, label);
 }
 
-/** Highlights the target wording and adds a callout. Source-only items are callouts on the target page. */
+/** Marks the discrepant wording on the target. A callout is used only when that wording is not on the page. */
 export async function marksOnTarget(target: PdfDoc, pairs: PairCheck[]): Promise<Mark[]> {
   const marks: Mark[] = [];
   for (const pair of pairs) {
@@ -543,12 +543,8 @@ export async function marksOnTarget(target: PdfDoc, pairs: PairCheck[]): Promise
         const raw = targetRaws[index];
         const note = index < paired ? `Source ${kind.toLowerCase()}: ${sourceRaws[index]}` : "Not on the source.";
         const quads = take(raw);
-        if (quads) {
-          marks.push(markText(pair.targetPage as number, quads, raw, "crimson", "number", "highlight"));
-          marks.push(placeCallout(pair.targetPage as number, note, quads[0], layout.width, layout.height, stack));
-        } else {
-          marks.push(placeCallout(pair.targetPage as number, `Target ${kind.toLowerCase()}: ${raw}. ${note}`, null, layout.width, layout.height, stack));
-        }
+        if (quads) marks.push(markText(pair.targetPage as number, quads, raw, note, "brass", "number", "highlight"));
+        else marks.push(placeCallout(pair.targetPage as number, `Target ${kind.toLowerCase()}: ${raw}. ${note}`, null, layout.width, layout.height, stack));
         stack += 1;
       }
       for (let index = paired; index < sourceRaws.length; index += 1) {
@@ -577,12 +573,8 @@ export async function marksOnTarget(target: PdfDoc, pairs: PairCheck[]): Promise
       const found = cache.get(item.raw) ?? locate(layout.text, layout.spans, item.raw);
       if (!cache.has(item.raw)) cache.set(item.raw, found);
       const quads = found[item.at] ?? null;
-      if (quads) {
-        marks.push(markText(pair.targetPage, quads, item.raw, "steel", "style", "underline"));
-        marks.push(placeCallout(pair.targetPage, item.note, quads[0], layout.width, layout.height, stack, "steel", "style"));
-      } else {
-        marks.push(placeCallout(pair.targetPage, `${item.raw}. ${item.note}`, null, layout.width, layout.height, stack, "steel", "style"));
-      }
+      if (quads) marks.push(markText(pair.targetPage, quads, item.raw, item.note, "steel", "style", "underline"));
+      else marks.push(placeCallout(pair.targetPage, `${item.raw}. ${item.note}`, null, layout.width, layout.height, stack, "steel", "style"));
       stack += 1;
     }
   }

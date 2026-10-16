@@ -39,7 +39,7 @@ import {
   type Tool,
 } from "@/lib/marks";
 import { compareDocuments } from "@/lib/compare-pdf";
-import { checkBilingual, marksOnTarget, type PairCheck } from "@/lib/bilingual-check";
+import { checkBilingual, marksOnTarget } from "@/lib/bilingual-check";
 import { comparisonResultsPdf, embedMarks, markedPagesPdf } from "@/lib/embed-marks";
 import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@/lib/pdf-client";
 import { buildSamplePdf } from "@/lib/sample-pdf";
@@ -124,7 +124,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [comparing, setComparing] = useState(false);
   const [grammarBusy, setGrammarBusy] = useState(false);
   const [pairKind, setPairKind] = useState<"compare" | "bilingual" | null>(null);
-  const [figureReport, setFigureReport] = useState<PairCheck[] | null>(null);
   const [figureBusy, setFigureBusy] = useState(false);
   const [targetMarks, setTargetMarks] = useState<Mark[]>([]);
   const [error, setError] = useState("");
@@ -872,7 +871,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     mateDocRef.current = null;
     setMate(null);
     setPairKind(null);
-    setFigureReport(null);
     targetMarksRef.current = [];
     setTargetMarks([]);
     void current.pdf.cleanup();
@@ -939,7 +937,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       viewports.current.clear();
       setActiveId(null);
       setHits([]);
-      setFigureReport(null);
       targetMarksRef.current = [];
       setTargetMarks([]);
       setStatus(
@@ -988,7 +985,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       mateDocRef.current = opened;
       setMate(opened);
       setPairKind(kind);
-      setFigureReport(null);
       targetMarksRef.current = [];
       setTargetMarks([]);
       setMateScale(scaleRef.current);
@@ -1172,27 +1168,11 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     try {
       const report = await checkBilingual(source, target);
       const marked = await marksOnTarget(target, report);
-      setFigureReport(report);
       targetMarksRef.current = marked;
       setTargetMarks(marked);
-      const missed = report.filter(
-        (pair) =>
-          pair.sourcePage === null ||
-          pair.targetPage === null ||
-          pair.datesSource.length ||
-          pair.datesTarget.length ||
-          pair.figuresSource.length ||
-          pair.figuresTarget.length ||
-          pair.formats.length,
-      ).length;
-      const notes = marked.filter((mark) => mark.kind === "callout").length;
-      setStatus(
-        notes
-          ? `Marked ${notes} on the target.`
-          : missed
-            ? `${missed} source and target ${missed === 1 ? "page differs" : "pages differ"}.`
-            : "Source and target match.",
-      );
+      const first = marked[0];
+      if (first) jumpTo("b", String(first.page));
+      setStatus(marked.length ? `Marked ${marked.length} on the target.` : "Source and target match.");
     } catch {
       setError("Figures and dates could not be checked.");
     } finally {
@@ -1904,53 +1884,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         </div>
       )}
 
-      {figureReport && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4">
-          <div className="flex max-h-[80vh] w-full max-w-lg flex-col rounded-md bg-paper p-5 text-ink">
-            <h2 className="text-2xl text-balance">Figures and dates</h2>
-            <p className="mt-2 text-sm text-pretty text-ink-soft">
-              The source page is checked against the target page with the same number. A date matches by the day. An amount matches without the currency sign or the thousands separators. Bold and italic are checked on a matching figure or date, and on other wording that is the same on both pages.
-            </p>
-            <div className="mt-4 min-h-0 flex-1 overflow-auto">
-              {figureReport.every((pair) => !pairDiffers(pair)) ? (
-                <p className="text-sm text-ink-soft">Figures, dates, and format match.</p>
-              ) : (
-                figureReport.filter(pairDiffers).map((pair) => (
-                  <section key={pair.page} className="mt-4 border-t border-line pt-3 first:mt-0 first:border-t-0 first:pt-0">
-                    <h3 className="text-base">
-                      {pair.sourcePage && pair.targetPage
-                        ? `Source page ${pair.sourcePage} and target page ${pair.targetPage}`
-                        : pair.sourcePage
-                          ? `Source page ${pair.sourcePage}`
-                          : `Target page ${pair.targetPage}`}
-                    </h3>
-                    {pair.sourcePage === null && <p className="mt-1 text-sm text-ink-soft">No source page for this number.</p>}
-                    {pair.targetPage === null && <p className="mt-1 text-sm text-ink-soft">No target page for this number.</p>}
-                    <GapList title="Only on the source" dates={pair.datesSource} figures={pair.figuresSource} />
-                    <GapList title="Only on the target" dates={pair.datesTarget} figures={pair.figuresTarget} />
-                    {pair.formats.length > 0 && (
-                      <div className="mt-2">
-                        <p className="text-sm">Format</p>
-                        <ul className="mt-1 list-disc pl-5 text-sm text-ink-soft">
-                          {pair.formats.map((item, index) => (
-                            <li key={`s-${index}`}>{`${item.raw}. ${item.note}`}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </section>
-                ))
-              )}
-            </div>
-            <div className="mt-5 flex justify-end">
-              <button type="button" onClick={() => setFigureReport(null)} className="h-11 rounded-md bg-brass px-4 text-sm text-paper">
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {pending && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-ink/50 p-4">
           <div className="w-full max-w-sm rounded-md bg-paper p-5 text-ink">
@@ -1980,43 +1913,6 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function pairDiffers(pair: PairCheck) {
-  return (
-    pair.sourcePage === null ||
-    pair.targetPage === null ||
-    pair.datesSource.length > 0 ||
-    pair.datesTarget.length > 0 ||
-    pair.figuresSource.length > 0 ||
-    pair.figuresTarget.length > 0 ||
-    pair.formats.length > 0
-  );
-}
-
-function GapList({
-  title,
-  dates,
-  figures,
-}: {
-  title: string;
-  dates: PairCheck["datesSource"];
-  figures: PairCheck["figuresSource"];
-}) {
-  if (!dates.length && !figures.length) return null;
-  return (
-    <div className="mt-2">
-      <p className="text-sm">{title}</p>
-      <ul className="mt-1 list-disc pl-5 text-sm text-ink-soft">
-        {dates.map((item, index) => (
-          <li key={`d-${index}`}>{item.extra > 1 ? `Date: ${item.raw} ×${item.extra}` : `Date: ${item.raw}`}</li>
-        ))}
-        {figures.map((item, index) => (
-          <li key={`f-${index}`}>{item.extra > 1 ? `Figure: ${item.raw} ×${item.extra}` : `Figure: ${item.raw}`}</li>
-        ))}
-      </ul>
     </div>
   );
 }

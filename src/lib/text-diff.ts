@@ -168,7 +168,7 @@ function deletionMark(page: number, words: PlacedWord[], anchor: Quad | null, st
     page,
     kind: "callout",
     pass: 1,
-    ink: "crimson",
+    ink: "brass",
     label: "note",
     note: `Deleted: ${text}`,
     quote: joined(words, 500),
