@@ -1959,6 +1959,12 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
           {error || status}
         </span>
       </footer>
+      <p
+        data-testid="disclaimer"
+        className="shrink-0 border-t border-line-dark px-3 py-1 text-center text-xs text-muted"
+      >
+        Disclaimer: Automated checks and marks are an aid only. They may miss issues or flag false positives and do not replace a full human proofread. Verify all content against the source.
+      </p>
 
       <input
         ref={fileRef}
