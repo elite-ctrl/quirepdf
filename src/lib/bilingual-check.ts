@@ -99,6 +99,42 @@ function styleOf(faces: Face[] | undefined, start: number, end: number): Face {
   return { bold: bold * 2 >= count, italic: italic * 2 >= count };
 }
 
+function isCjk(char: string): boolean {
+  return /[\u3400-\u9FFF]/.test(char);
+}
+
+function tighten(piece: string): string {
+  return piece
+    .replace(/(\d)\s+(?=\d)/g, "$1")
+    .replace(/(\d)\s+(?=[,，.年月日%％])/g, "$1")
+    .replace(/([,，.年月日])\s+(?=\d)/g, "$1");
+}
+
+function glued(text: string, piece: string): boolean {
+  const left = text.trimEnd().at(-1) ?? "";
+  const right = piece.trimStart()[0] ?? "";
+  if (!left || !right) return false;
+  if (isCjk(left) || isCjk(right)) return true;
+  if (/\d/.test(left) && /[\d,，.%％年月日]/.test(right)) return true;
+  if (/[,，.年月日]/.test(left) && /\d/.test(right)) return true;
+  if (/[([［【]/.test(left) && /\d/.test(right)) return true;
+  if (left === "." && /\d/.test(right) && !/\d/.test(text.trimEnd().at(-2) ?? "")) return true;
+  return false;
+}
+
+function blankFurniture(text: string): string {
+  const wipe = (pattern: RegExp) => {
+    text = text.replace(pattern, (match) => " ".repeat(match.length));
+  };
+  wipe(/File:[\s\S]*?request\)/g);
+  wipe(/[–—]\s*\d+\s*[–—]/g);
+  wipe(/\bLR\s*[\d.A-Za-z]+(?:\s*\(\d+\))?/g);
+  wipe(/\bBL:\s*\([^)]*\)(?:\s*\/\s*\([^)]*\))?/g);
+  wipe(/\b\d+\s*\(W\)\s*x\s*\d+\s*\(H\)/gi);
+  wipe(/\bNote\s+\d+\s+to\b/g);
+  return text;
+}
+
 function faceNote(source: Face, target: Face): string {
   const parts: string[] = [];
   if (source.bold !== target.bold) parts.push(source.bold ? "Source is bold." : "Source is not bold.");
@@ -111,7 +147,7 @@ function styleKey(face: Face): string {
 }
 
 export function tokensIn(source: string, faces?: Face[]): Token[] {
-  const text = source.normalize("NFKC");
+  const text = blankFurniture(source.normalize("NFKC"));
   const tokens: Token[] = [];
   const mask = new Array(text.length).fill(false);
   const dates: Array<{ re: RegExp; key: (match: RegExpMatchArray) => string | null }> = [
@@ -157,9 +193,28 @@ export function tokensIn(source: string, faces?: Face[]): Token[] {
     }
   }
 
+  const equated = [
+    { re: /十二\s*個?\s*月/g, key: "12" },
+    { re: /\b12\s*[-‐‑–—]\s*months?\b/gi, key: "12" },
+  ];
+  for (const pattern of equated) {
+    for (const match of text.matchAll(pattern.re)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      if (mask.slice(start, end).some(Boolean)) continue;
+      mask.fill(true, start, end);
+      tokens.push({
+        kind: "figure",
+        key: pattern.key,
+        raw: match[0].replace(/\s+/g, " ").trim(),
+        ...styleOf(faces, start, end),
+      });
+    }
+  }
+
   const bare = [...text].map((char, index) => (mask[index] ? " " : char)).join("");
   const figure =
-    /(?:\(|^|[^\d.])((?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(?:\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:十[亿億]|百[万萬]|[亿億]|[万萬]|million|billion|mn|bn|cents?|仙|%|％|个百分点|per\s*cent)?\)?)/gi;
+    /(?:^|[^\d.]|(?<=\D)\.)((?:HK\$|US\$|USD|HKD|RMB|CNY|EUR|GBP|[$£€¥])?\s*(?:\d{1,3}(?:[,，]\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*(?:十[亿億]|百[万萬]|[亿億]|[万萬]|million|billion|mn|bn|cents?|仙|%|％|个百分点|per\s*cent)?\)?)/gi;
   for (const match of bare.matchAll(figure)) {
     const raw = match[1].replace(/\s+/g, " ").trim();
     const body = raw.replace(/[()]/g, "");
@@ -307,14 +362,6 @@ function wordStyleGaps(sourceText: string, sourceFaces: Face[] | undefined, targ
   return found;
 }
 
-const emptySide = {
-  datesSource: [],
-  datesTarget: [],
-  figuresSource: [],
-  figuresTarget: [],
-  formats: [],
-};
-
 type FontRecord = { bold?: boolean; italic?: boolean; black?: boolean };
 
 async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: string; faces: Face[] }> {
@@ -338,6 +385,7 @@ async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
   };
   let text = "";
   const faces: Face[] = [];
+  let pendingSpace = false;
   const push = (piece: string, face: Face) => {
     text += piece;
     for (let index = 0; index < piece.length; index += 1) faces.push(face);
@@ -345,13 +393,62 @@ async function readStyled(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
   for (const item of content.items) {
     if (!("str" in item)) continue;
     const run = item as TextRun;
-    const piece = run.str.normalize("NFKC");
+    const piece = tighten(run.str.normalize("NFKC"));
     const face = faceOf(run.fontName);
-    if (text && piece && !/\s$/.test(text) && !/^\s/.test(piece)) push(" ", { bold: false, italic: false });
-    if (piece) push(piece, face);
+    if (!piece.trim()) {
+      pendingSpace = true;
+      if (run.hasEOL) push("\n", { bold: false, italic: false });
+      continue;
+    }
+    if (pendingSpace && text && !glued(text, piece)) push(" ", { bold: false, italic: false });
+    pendingSpace = false;
+    push(piece, face);
     if (run.hasEOL) push("\n", { bold: false, italic: false });
   }
-  return { text, faces };
+  return { text: blankFurniture(text), faces };
+}
+
+function counts(pages: Map<number, Token[]>, kind: Token["kind"]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const list of pages.values()) {
+    for (const token of list) {
+      if (token.kind !== kind) continue;
+      map.set(token.key, (map.get(token.key) ?? 0) + 1);
+    }
+  }
+  return map;
+}
+
+function extrasByPage(pages: Map<number, Token[]>, other: Map<string, number>, kind: Token["kind"]): Map<number, SideGap[]> {
+  const budget = new Map(other);
+  const found = new Map<number, SideGap[]>();
+  for (const page of [...pages.keys()].sort((a, b) => a - b)) {
+    for (const token of pages.get(page) ?? []) {
+      if (token.kind !== kind) continue;
+      const left = budget.get(token.key) ?? 0;
+      if (left > 0) {
+        budget.set(token.key, left - 1);
+        continue;
+      }
+      const list = found.get(page) ?? [];
+      const same = list.find((item) => item.raw === token.raw);
+      if (same) same.extra += 1;
+      else list.push({ raw: token.raw, extra: 1 });
+      found.set(page, list);
+    }
+  }
+  return found;
+}
+
+function park(gaps: Map<number, SideGap[]>, limit: number): Map<number, SideGap[]> {
+  const parked = new Map<number, SideGap[]>();
+  for (const [page, list] of gaps) {
+    const dest = page <= limit ? page : 1;
+    const current = parked.get(dest) ?? [];
+    current.push(...list);
+    parked.set(dest, current);
+  }
+  return parked;
 }
 
 export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<PairCheck[]> {
@@ -367,19 +464,35 @@ export async function checkBilingual(source: PdfDoc, target: PdfDoc): Promise<Pa
       targetText.set(page, await readStyled(target, page));
     }),
   ]);
+  const sourceTokens = new Map<number, Token[]>();
+  const targetTokens = new Map<number, Token[]>();
+  for (const [page, value] of sourceText) sourceTokens.set(page, tokensIn(value.text, value.faces));
+  for (const [page, value] of targetText) targetTokens.set(page, tokensIn(value.text, value.faces));
+  const sourceDates = park(extrasByPage(sourceTokens, counts(targetTokens, "date"), "date"), target.numPages);
+  const targetDates = extrasByPage(targetTokens, counts(sourceTokens, "date"), "date");
+  const sourceFigures = park(extrasByPage(sourceTokens, counts(targetTokens, "figure"), "figure"), target.numPages);
+  const targetFigures = extrasByPage(targetTokens, counts(sourceTokens, "figure"), "figure");
   return pages.map((page) => {
     const sourcePage = page <= source.numPages ? page : null;
     const targetPage = page <= target.numPages ? page : null;
-    if (sourcePage === null || targetPage === null) {
-      return { page, sourcePage, targetPage, ...emptySide };
-    }
-    const left = sourceText.get(page);
-    const right = targetText.get(page);
+    const formats =
+      sourcePage && targetPage
+        ? compareSides(
+            sourceText.get(page)?.text ?? "",
+            targetText.get(page)?.text ?? "",
+            sourceText.get(page)?.faces,
+            targetText.get(page)?.faces,
+          ).formats
+        : [];
     return {
       page,
       sourcePage,
       targetPage,
-      ...compareSides(left?.text ?? "", right?.text ?? "", left?.faces, right?.faces),
+      datesSource: targetPage ? (sourceDates.get(page) ?? []) : [],
+      datesTarget: targetPage ? (targetDates.get(page) ?? []) : [],
+      figuresSource: targetPage ? (sourceFigures.get(page) ?? []) : [],
+      figuresTarget: targetPage ? (targetFigures.get(page) ?? []) : [],
+      formats,
     };
   });
 }
@@ -414,11 +527,18 @@ async function pageLayout(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
   const content = await page.getTextContent();
   let text = "";
   const spans: Span[] = [];
+  let pendingSpace = false;
   for (const item of content.items) {
     if (!("str" in item)) continue;
     const run = item as TextRun;
-    const piece = run.str.normalize("NFKC");
-    if (text && piece && !/\s$/.test(text) && !/^\s/.test(piece)) text += " ";
+    const piece = tighten(run.str.normalize("NFKC"));
+    if (!piece.trim()) {
+      pendingSpace = true;
+      if (run.hasEOL) text += "\n";
+      continue;
+    }
+    if (pendingSpace && text && !glued(text, piece)) text += " ";
+    pendingSpace = false;
     if (piece) {
       const start = text.length;
       text += piece;
@@ -434,7 +554,7 @@ async function pageLayout(pdf: PdfDoc, pageNumber: number): Promise<{ text: stri
     }
     if (run.hasEOL) text += "\n";
   }
-  return { text, spans, width: viewport.width, height: viewport.height };
+  return { text: blankFurniture(text), spans, width: viewport.width, height: viewport.height };
 }
 
 function locate(text: string, spans: Span[], raw: string): Quad[][] {
@@ -562,10 +682,6 @@ export async function marksOnTarget(target: PdfDoc, pairs: PairCheck[]): Promise
         stack += 1;
       }
     };
-    if (pair.sourcePage === null) {
-      marks.push(placeCallout(pair.targetPage, "No source page for this number.", null, layout.width, layout.height, stack));
-      continue;
-    }
     add("Date", expand(pair.datesSource), expand(pair.datesTarget));
     add("Figure", expand(pair.figuresSource), expand(pair.figuresTarget));
     for (const item of pair.formats) {

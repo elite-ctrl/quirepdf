@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Faircopy",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Proofread a translation beside its source. The file stays on this computer.",
   "minimum_chrome_version": "151",
   "action": {
