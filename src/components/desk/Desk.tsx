@@ -34,7 +34,6 @@ import {
   INKS,
   LABELS,
   type InkId,
-  type Kind,
   type LabelId,
   type Mark,
   type Tool,
@@ -194,6 +193,9 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   stayRef.current = staySelection;
   joinRef.current = joinLines;
   paidRef.current = paid;
+  // Effects call the latest loadBytes through this ref, so they do not re-run on every render.
+  const loadBytesRef = useRef(loadBytes);
+  loadBytesRef.current = loadBytes;
 
   useEffect(() => {
     if (studio) {
@@ -205,7 +207,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     paidRef.current = stored;
     setPaid(stored);
     if (stored && !portable) notePasscode("");
-  }, [studio]);
+  }, [studio, portable]);
 
   useEffect(() => {
     if (!portable) return;
@@ -216,7 +218,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       const launched = launch ? await fetchLaunchedPdf() : await fetchChromePdf();
       if (!launched || cancel) return;
       if (studio || paidRef.current || unlockStored()) {
-        await loadBytes(launched.name, launched.bytes, launch ? "file" : "chrome");
+        await loadBytesRef.current(launched.name, launched.bytes, launch ? "file" : "chrome");
         return;
       }
       heldLaunch.current = { name: launched.name, bytes: launched.bytes, source: launch ? "file" : "chrome" };

@@ -12,7 +12,7 @@ import { chromium } from "playwright";
 import { PDFDocument, PDFName } from "pdf-lib";
 
 const directory = await mkdtemp(resolve(tmpdir(), "quire-square-"));
-await mkdir("screenshots", { recursive: true });
+await mkdir("screenshots/test-runs", { recursive: true });
 const pdf = await PDFDocument.create();
 pdf.addPage([400, 600]).drawText("Synthetic square test", { x: 40, y: 530, size: 16 });
 const source = resolve(directory, "sq.pdf");
@@ -73,7 +73,7 @@ try {
   const moved = await squares.first().locator("rect").nth(1).boundingBox();
   assert.ok(Math.abs(moved.x - after.x - 30) < 3 && Math.abs(moved.width - after.width) < 1, "moved without resizing");
 
-  await page.screenshot({ path: "screenshots/square-desktop.png" });
+  await page.screenshot({ path: "screenshots/test-runs/square-desktop.png" });
 
   const [download] = await Promise.all([
     page.waitForEvent("download"),
@@ -95,7 +95,7 @@ try {
   await second.goto(url);
   await second.locator("#quire-open").setInputFiles(out);
   await second.locator('[data-pane="work"][data-page="1"] [data-kind="square"]').first().waitFor();
-  await second.screenshot({ path: "screenshots/square-mobile.png" });
+  await second.screenshot({ path: "screenshots/test-runs/square-mobile.png" });
   await second.close();
   await page.close();
   assert.deepEqual(errors, []);

@@ -14,7 +14,7 @@ import { chromium } from "playwright";
 import { PDFDocument } from "pdf-lib";
 
 const directory = await mkdtemp(resolve(tmpdir(), "quire-autosave-"));
-const screenshotDir = resolve("screenshots");
+const screenshotDir = resolve("screenshots/test-runs");
 await mkdir(screenshotDir, { recursive: true });
 for (const name of ["a", "b"]) {
   const pdf = await PDFDocument.create();

@@ -8,6 +8,8 @@ const APP_NAME = "Faircopy";
 
 const readRawHost = createIsomorphicFn()
   .server(() => {
+    // Lazy require keeps this server-only module out of the client bundle.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { requestHost } = require("@/lib/share-host.server") as typeof import("@/lib/share-host.server");
     return requestHost();
   })
