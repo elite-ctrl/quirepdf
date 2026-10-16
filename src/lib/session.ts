@@ -1,4 +1,4 @@
-import { sanitizeMark, type Mark } from "@/lib/marks";
+import { sanitizeMark, type Mark } from "./marks.ts";
 
 const DB_NAME = "quire-desk";
 const STORE = "sessions";
@@ -27,15 +27,17 @@ export async function fingerprint(bytes: Uint8Array): Promise<string> {
 }
 
 export async function loadSession(key: string): Promise<Session | null> {
+  let db: IDBDatabase | undefined;
   try {
-    const db = await openDb();
+    const connection = await openDb();
+    db = connection;
     const record = await new Promise<unknown>((resolve, reject) => {
-      const tx = db.transaction(STORE, "readonly");
+      const tx = connection.transaction(STORE, "readonly");
       const request = tx.objectStore(STORE).get(key);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
+      tx.onabort = () => reject(tx.error ?? new Error("Session read aborted."));
     });
-    db.close();
     if (!record || typeof record !== "object") return null;
     const session = record as Partial<Session>;
     if (!Array.isArray(session.marks) || !Array.isArray(session.importedSourceIds)) return null;
@@ -48,20 +50,28 @@ export async function loadSession(key: string): Promise<Session | null> {
     };
   } catch {
     return null;
+  } finally {
+    db?.close();
   }
 }
 
-export async function saveSession(key: string, session: Session): Promise<void> {
+/** True means the transaction completed, not merely that the write was queued. */
+export async function saveSession(key: string, session: Session): Promise<boolean> {
+  let db: IDBDatabase | undefined;
   try {
-    const db = await openDb();
+    const connection = await openDb();
+    db = connection;
     await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(STORE, "readwrite");
+      const tx = connection.transaction(STORE, "readwrite");
       tx.objectStore(STORE).put(session, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error ?? new Error("Session save aborted."));
     });
-    db.close();
+    return true;
   } catch {
-    // Persistence is a convenience. The downloadable PDF is the record that travels.
+    return false;
+  } finally {
+    db?.close();
   }
 }

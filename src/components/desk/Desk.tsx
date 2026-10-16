@@ -43,7 +43,8 @@ import { checkBilingual, marksOnTarget } from "@/lib/bilingual-check";
 import { comparisonResultsPdf, embedMarks, markedPagesPdf } from "@/lib/embed-marks";
 import { openPdf, readExisting, searchPdf, type PdfDoc, type SearchHit } from "@/lib/pdf-client";
 import { buildSamplePdf } from "@/lib/sample-pdf";
-import { fingerprint, loadSession, saveSession } from "@/lib/session";
+import { fingerprint, loadSession, saveSession, type Session } from "@/lib/session";
+import { createSessionAutosaver, type AutosaveState } from "@/lib/session-autosave";
 import { fetchLaunchedPdf } from "@/lib/launch-pdf";
 import { chromeMimeAvailable, fetchChromePdf } from "@/lib/chrome-pdf";
 import { tryPasscode, unlockStored } from "@/lib/passcode";
@@ -129,6 +130,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const [error, setError] = useState("");
   const [status, setStatus] = useState("");
   const [sessionKey, setSessionKey] = useState<string | null>(null);
+  const [saveState, setSaveState] = useState<AutosaveState>({ key: null, status: "idle" });
   const [pending, setPending] = useState<File | "sample" | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [historyTick, setHistoryTick] = useState(0);
@@ -173,6 +175,12 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
   const paidRef = useRef(studio);
   const pendingMate = useRef<File | null>(null);
   const applyRef = useRef<(kind: "highlight" | "underline" | "strikeout") => boolean>(() => false);
+  const currentSessionRef = useRef<{ key: string; name: string } | null>(null);
+  const autosaverRef = useRef<ReturnType<typeof createSessionAutosaver<Session>> | null>(null);
+  if (!autosaverRef.current) {
+    autosaverRef.current = createSessionAutosaver({ persist: saveSession, onChange: setSaveState });
+  }
+  const autosaver = autosaverRef.current;
 
   marksRef.current = marks;
   importedRef.current = imported;
@@ -259,16 +267,55 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
 
   useEffect(() => {
     if (!sessionKey || !fileName) return;
-    const handle = window.setTimeout(() => {
-      void saveSession(sessionKey, {
-        name: fileName,
-        marks,
-        importedSourceIds: imported,
+    currentSessionRef.current = { key: sessionKey, name: fileName };
+    autosaver.schedule(sessionKey, {
+      name: fileName,
+      marks,
+      importedSourceIds: imported,
+      savedAt: Date.now(),
+    });
+  }, [sessionKey, fileName, marks, imported, autosaver]);
+
+  useEffect(() => {
+    function flushWhenHidden() {
+      if (document.visibilityState === "hidden") void autosaver.flush();
+    }
+    function flushOnExit() {
+      void autosaver.flush();
+    }
+    document.addEventListener("visibilitychange", flushWhenHidden);
+    window.addEventListener("pagehide", flushOnExit);
+    return () => {
+      document.removeEventListener("visibilitychange", flushWhenHidden);
+      window.removeEventListener("pagehide", flushOnExit);
+      void autosaver.flush();
+    };
+  }, [autosaver]);
+
+  useEffect(() => {
+    if (saveState.status === "idle" || saveState.status === "saved") return;
+    function warnOnExit(event: BeforeUnloadEvent) {
+      if (!autosaver.isDirty()) return;
+      void autosaver.flush();
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnOnExit);
+    return () => window.removeEventListener("beforeunload", warnOnExit);
+  }, [autosaver, saveState.status]);
+
+  function persistCurrentSession() {
+    const current = currentSessionRef.current;
+    if (current) {
+      autosaver.schedule(current.key, {
+        name: current.name,
+        marks: marksRef.current,
+        importedSourceIds: importedRef.current,
         savedAt: Date.now(),
       });
-    }, 350);
-    return () => window.clearTimeout(handle);
-  }, [sessionKey, fileName, marks, imported]);
+    }
+    return autosaver.flush();
+  }
 
   useEffect(() => {
     if (!pdf) return;
@@ -605,6 +652,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
+      if (busy || mateBusy) return;
       const target = event.target as HTMLElement | null;
       const typing = !!target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
@@ -716,6 +764,11 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     setStatus("Opening…");
     setPending(null);
     try {
+      if (!(await persistCurrentSession())) {
+        setError("Local save failed. Download your marked PDF or comment sheet before opening another file, then retry the save.");
+        setStatus("");
+        return;
+      }
       const [nextPdf, key] = await Promise.all([openPdf(bytes), fingerprint(bytes)]);
       if (ticket !== openTicket.current) {
         void nextPdf.cleanup();
@@ -745,12 +798,13 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
       noteSnapshot.current = null;
       viewports.current.clear();
       setActiveId(null);
-      setSessionKey(key);
       if (previous && previous !== nextPdf) void previous.cleanup();
       if (session) {
         marksRef.current = session.marks;
+        importedRef.current = session.importedSourceIds;
         setMarks(session.marks);
         setImported(session.importedSourceIds);
+        setSessionKey(key);
         setStatus(
           session.marks.length
             ? `Restored ${session.marks.length} mark${session.marks.length === 1 ? "" : "s"} kept on this machine.`
@@ -760,15 +814,20 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         return;
       }
       marksRef.current = [];
+      importedRef.current = [];
       setMarks([]);
       setImported([]);
+      currentSessionRef.current = null;
+      setSessionKey(null);
       bumpHistory();
       setStatus("Reading marks already in the file…");
       const parsed = await readExisting(nextPdf);
       if (ticket !== openTicket.current || pdfRef.current !== nextPdf) return;
       marksRef.current = parsed.marks;
+      importedRef.current = parsed.ids;
       setMarks(parsed.marks);
       setImported(parsed.ids);
+      setSessionKey(key);
       setStatus(
         parsed.marks.length
           ? `Opened with ${parsed.marks.length} mark${parsed.marks.length === 1 ? "" : "s"} already in the file.`
@@ -914,13 +973,10 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
     setMateBusy(true);
     setError("");
     try {
-      const leftKey = sessionKey ?? (await fingerprint(leftBytes));
-      await saveSession(leftKey, {
-        name: fileName,
-        marks: marksRef.current,
-        importedSourceIds: importedRef.current,
-        savedAt: Date.now(),
-      });
+      if (!(await persistCurrentSession())) {
+        setError("Local save failed. Download your marked PDF or comment sheet before swapping, then retry the save.");
+        return;
+      }
       const rightKey = await fingerprint(right.bytes);
       const session = await loadSession(rightKey);
       let nextMarks = session?.marks ?? [];
@@ -1280,7 +1336,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         receiveFiles(files);
       }}
     >
-      <header className="shrink-0 border-b border-line-dark">
+      <header inert={busy || mateBusy} className="shrink-0 border-b border-line-dark">
         <div className="flex h-14 items-center gap-2 overflow-x-auto px-3">
           <p className="quire-word font-display text-2xl leading-none tracking-tight">Faircopy</p>
           {fileName && (
@@ -1520,7 +1576,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
         )}
       </header>
 
-      <div className={`flex min-h-0 flex-1 ${dragOver ? "quire-dropping" : ""}`}>
+      <div inert={busy || mateBusy} className={`flex min-h-0 flex-1 ${dragOver ? "quire-dropping" : ""}`}>
         {!pdf && (
           <div className="min-w-0 flex-1 overflow-auto">
             {busy ? (
@@ -1772,6 +1828,31 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
           </button>
         )}
         {studio && <span className="shrink-0 text-paper">Studio</span>}
+        {pdf && sessionKey && saveState.key === sessionKey && (
+          <span
+            role="status"
+            aria-live="polite"
+            className="inline-flex shrink-0 items-center gap-2 text-paper"
+            title={saveState.status === "error"
+              ? "Local save failed. Download the marked PDF or comment sheet to keep a copy, then retry."
+              : "Recovery copy in this browser only. Download the marked PDF for a portable record."}
+          >
+            {saveState.status === "saved"
+              ? "Saved locally"
+              : saveState.status === "error"
+                ? "Local save failed"
+                : "Saving locally…"}
+            {saveState.status === "error" && (
+              <button
+                type="button"
+                onClick={() => { setError(""); void persistCurrentSession(); }}
+                className="h-11 rounded-md px-2 text-paper hover:bg-raised"
+              >
+                Retry save
+              </button>
+            )}
+          </span>
+        )}
         {pdf && (
           <>
             <label className="inline-flex items-center gap-2 tabular-nums">
@@ -1918,7 +1999,7 @@ export function Desk({ studio = false, portable = false }: { studio?: boolean; p
           <div className="w-full max-w-sm rounded-md bg-paper p-5 text-ink">
             <h2 className="text-2xl text-balance">Open another file?</h2>
             <p className="mt-2 text-sm text-pretty text-ink-soft">
-              Marks on this file stay in this browser. They are not uploaded.
+              Marks are saved in this browser before switching. Download a marked PDF to keep a separate copy. Nothing is uploaded.
             </p>
             <div className="mt-5 flex justify-end gap-2">
               <button type="button" onClick={() => { pendingMate.current = null; setPending(null); }} className="h-11 rounded-md px-4 text-sm text-ink">
